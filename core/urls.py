@@ -17,6 +17,8 @@ urlpatterns = [
     
     # Módulos do Sistema
     path('api/v1/organizacao/', include('apps.organizacao.urls')),
+
+    path('api/v1/faturacao/', include('apps.faturacao.urls')),
 ]
 
 # ESTA PARTE É O QUE FALTA: 
