@@ -9,8 +9,10 @@ router.register(r'enderecos', viewsets.EnderecoViewSet , basename='enderecos')
 router.register(r'empresas', viewsets.EmpresaViewSet , basename='empresas')
 router.register(r'filiais', viewsets.FilialViewSet , basename='filiais')
 router.register(r'funcionarios', viewsets.FuncionarioViewSet , basename='funcionarios')
-router.register(r'funcionario/me', viewsets.FuncionarioViewSet , basename='funcionario-me')
+
 
 urlpatterns = [
+    path('utilizador/perfil/',viewsets.PerfilUtilizadorView.as_view(), name='utilizador-perfil'),
+    path('utilizador/logado/', viewsets.PerfilUtilizadorView.as_view(), name='utilizador-logado'),
     path('', include(router.urls)),
 ]
