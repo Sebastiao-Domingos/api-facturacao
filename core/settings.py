@@ -30,6 +30,7 @@ DJANGO_APPS = [
     'django.contrib.staticfiles',
     "rest_framework",
     'rest_framework_simplejwt',
+    "django_filters",
 ]
 LOCAL_APPS = [
     'apps.organizacao',
@@ -43,6 +44,13 @@ INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
 
 # 2. Configurar o REST Framework para usar JWT por padrão
 REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+     'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication', # ADICIONA ESTA LINHA
@@ -51,6 +59,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
 }
+
+   
 
 
 # 3. Definições do Token (Seguindo o documento de engenharia)
