@@ -7,6 +7,7 @@ from django.conf import settings
 class Funcionario(BaseModel):
     ROLES = (
         ('SUPERADMIN', 'Administrador'),
+        ('ADMIN', 'Administrador de Filial'),
         ('GESTOR', 'Gestor de Filial'),
         ('OPERADOR', 'Operador de Caixa'),
         ('CONTABILISTA', 'Contabilista'),
