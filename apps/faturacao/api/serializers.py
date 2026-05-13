@@ -25,9 +25,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produto
         fields = [
-            'id', 'nome', 'tipo', 'categoria', 'categoria_detalhes',
+            'id', 'nome', 'tipo', 'imagem', 'categoria', 'categoria_detalhes',
             'unidade_medida', 'unidade_detalhes', 'taxa_iva', 'taxa_detalhes',
-            'preco_venda', 'codigo_barras', 'ref_interna', 'ativo'
+            'preco_venda', 'codigo_barras', 'ref_interna', 'ativo' , "thumbnail"
         ]
         read_only_fields = ['codigo_barras'] # O backend gera, o front não deve enviar
 

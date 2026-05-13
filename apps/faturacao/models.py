@@ -1,6 +1,10 @@
 from django.db import models
 from apps.organizacao.models.base import BaseModel
-import random
+import random, os
+from PIL import Image
+from django.core.files.base import ContentFile
+from io import BytesIO
+
 
 def gerar_ean13_valido():
     """Gera um código EAN-13 interno com prefixo 27."""
@@ -52,6 +56,8 @@ class Produto(BaseModel):
 
     nome = models.CharField(max_length=255)
     tipo = models.CharField(max_length=1, choices=TIPO_CHOICES, default='P')
+    imagem = models.ImageField(upload_to='produtos/%Y/%m/', null=True, blank=True)
+    thumbnail = models.ImageField(upload_to='produtos/thumbs/%Y/%m/', editable=False, null=True, blank=True)
     categoria = models.ForeignKey(Categoria, on_delete=models.SET_NULL, null=True, related_name='produtos')
     
     # Chaves Estrangeiras para as novas tabelas
@@ -64,18 +70,45 @@ class Produto(BaseModel):
     ref_interna = models.CharField(max_length=50, unique=True, blank=True, null=True)
     
     ativo = models.BooleanField(default=True)
-
-    def save(self, *args, **kwargs):
-        if not self.codigo_barras:
-            self.codigo_barras = gerar_ean13_valido() # Usando a função que criamos antes
-        super().save(*args, **kwargs)
-
     class Meta:
         verbose_name = "Produto"
         verbose_name_plural = "Produtos"
 
     def __str__(self):
         return self.nome
+
+    def save(self, *args, **kwargs):
+        if not self.codigo_barras:
+            self.codigo_barras = gerar_ean13_valido() # Usando a função que criamos antes
+
+        if self.imagem and not self.thumbnail:
+            self.thumbnail = self.make_thumbnail(self.imagem)
+        
+        super().save(*args, **kwargs)
+
+
+
+    def make_thumbnail(self, image, size=(300, 300)):
+        """Gera uma miniatura proporcional convertendo RGBA para RGB se necessário."""
+        img = Image.open(image)
+        
+        # Se a imagem tiver canal de transparência (RGBA), converte para RGB
+        if img.mode in ("RGBA", "P"):
+            img = img.convert('RGB')
+        else:
+            img = img.convert('RGB') # Garante que está em RGB para o JPEG
+
+        img.thumbnail(size)
+        
+        thumb_io = BytesIO()
+        # Agora podemos salvar como JPEG com segurança
+        img.save(thumb_io, 'JPEG', quality=85) 
+        
+        name = os.path.basename(image.name)
+        # Garante que a extensão do ficheiro no thumbnail seja .jpg para condizer com o formato
+        name = os.path.splitext(name)[0] + ".jpg"
+        
+        return ContentFile(thumb_io.getvalue(), name=name)
 
 
 
