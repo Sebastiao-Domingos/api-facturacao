@@ -24,8 +24,11 @@ class ProdutoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Produto
-        fields = [
-            'id', 'nome', 'tipo', 'categoria', 'categoria_nome',
-            'unidade_medida', 'unidade_sigla', 'taxa_iva', 'taxa_valor',
-            'preco_venda', 'codigo_barras', 'ref_interna', 'ativo'
-        ]
+        fields = "__all__"
+
+class StockSerializer(serializers.ModelSerializer):
+    produto_nome = serializers.ReadOnlyField(source='produto.nome')
+
+    class Meta:
+        model = Stock
+        fields = "__all__"

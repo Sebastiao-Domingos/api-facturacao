@@ -70,6 +70,13 @@ class Produto(BaseModel):
             self.codigo_barras = gerar_ean13_valido() # Usando a função que criamos antes
         super().save(*args, **kwargs)
 
+    class Meta:
+        verbose_name = "Produto"
+        verbose_name_plural = "Produtos"
+
+    def __str__(self):
+        return self.nome
+
 
 
 
