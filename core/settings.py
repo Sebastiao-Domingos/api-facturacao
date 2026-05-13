@@ -31,6 +31,7 @@ DJANGO_APPS = [
     "rest_framework",
     'rest_framework_simplejwt',
     "django_filters",
+    "corsheaders",
 ]
 LOCAL_APPS = [
     'apps.organizacao',
@@ -77,14 +78,28 @@ SIMPLE_JWT = {
 
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', # Deve estar no TOPO da lista
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://192.168.43.5:3000", # Teu IP de rede que vimos no log anterior
+]
+
+# Se quiseres permitir tudo apenas durante o desenvolvimento (não recomendado em produção)
+# CORS_ALLOW_ALL_ORIGINS = True 
+
+# Importante para o que definimos nos Cookies
+CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'core.urls'
 
@@ -163,3 +178,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # No final do settings.py
 AUTH_USER_MODEL = 'utilizadores.CustomUser'
+
+AUTHENTICATION_BACKENDS = [
+    'apps.utilizadores.backends.EmailOrUsernameModelBackend', # Ex: 'apps.utilizadores.backends...'
+    'django.contrib.auth.backends.ModelBackend', # Mantém o padrão como reserva
+]
