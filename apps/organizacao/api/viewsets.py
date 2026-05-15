@@ -48,7 +48,7 @@ class EmpresaViewSet(viewsets.ModelViewSet):
 
 class FilialViewSet(viewsets.ModelViewSet):
     serializer_class = FilialSerializer
-    pagination_class = PadraoPaginacao
+    pagination_class = None
     permission_classes = [IsAuthenticated]
 
 
