@@ -44,11 +44,11 @@ class TaxaIvaViewSet(BaseViewSet):
     serializer_class = TaxaIvaSerializer
     search_fields = ['codigo']
     ordering_fields = ['codigo']
-    pagination_class = PadraoPaginacao
+    pagination_class = None
 
 class UnidadeMedidaViewSet(BaseViewSet):
     queryset = UnidadeMedida.objects.all()
     serializer_class = UnidadeMedidaSerializer
     search_fields = ['sigla', 'nome']
     ordering_fields = ['sigla', 'nome']
-    pagination_class = PadraoPaginacao
+    pagination_class = None
