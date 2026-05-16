@@ -84,8 +84,8 @@ class EmpresaSerializer(serializers.ModelSerializer):
 
 class FilialSerializer(serializers.ModelSerializer):
     empresa_nome = serializers.ReadOnlyField(source='empresa.nome_fantasia')
-    endereco = EnderecoSerializer( read_only=True)
-    endereco_data = EnderecoSerializer(write_only=True)
+    endereco = EnderecoSerializer()
+    # endereco_data = EnderecoSerializer(write_only=True)
 
     class Meta:
         model = Filial
@@ -93,7 +93,7 @@ class FilialSerializer(serializers.ModelSerializer):
 
     
     def create(self, validated_data):
-        endereco_data = validated_data.pop('endereco_data')
+        endereco_data = validated_data.pop('endereco')
         endereco = Endereco.objects.create(**endereco_data)
         validated_data['endereco'] = endereco
 
