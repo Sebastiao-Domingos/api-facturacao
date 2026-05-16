@@ -22,13 +22,15 @@ class MunicipioSerializer(serializers.ModelSerializer):
 class EnderecoSerializer(serializers.ModelSerializer):
     municipio_nome = serializers.ReadOnlyField(source='municipio.nome')
     provincia_nome = serializers.ReadOnlyField(source='municipio.provincia.nome')
+    provincia_id = serializers.ReadOnlyField(source='municipio.provincia.id')
+
 
     class Meta:
         model = Endereco
         fields = [
             'id', 'bairro', 'rua', 'ponto_referencia', 
             'longitude', 'latitude', 'municipio', 
-            'municipio_nome', 'provincia_nome','created_at', 'updated_at'
+            'municipio_nome', 'provincia_nome','created_at', 'updated_at', "provincia_id"
         ]
 
 
