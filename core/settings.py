@@ -38,6 +38,7 @@ LOCAL_APPS = [
     'apps.utilizadores',
     "apps.faturacao",
     "common",
+    'apps.clientes'
     # Aqui você pode adicionar apps locais específicos do seu projeto
 ]
 

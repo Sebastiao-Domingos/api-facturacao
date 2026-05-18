@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from ..models import Categoria, UnidadeMedida, TaxaIva, Produto, Stock
+from ..models import Categoria, UnidadeMedida, TaxaIva, Produto, Stock, MovimentacaoStock
+from django.db import transaction
+from rest_framework.exceptions import ValidationError
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -53,3 +55,101 @@ class StockSerializer(serializers.ModelSerializer):
             'id', 'produto', 'produto_nome', 'codigo_barras', 
             'filial', 'filial_nome', 'quantidade', 'stock_minimo'
         ]
+
+
+class MovimentacaoStockSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    data = serializers.DateTimeField(source='created_at', format='%Y-%m-%dT%H:%M:%SZ', read_only=True)
+    
+    # Campo aninhado dinâmico que vai retornar o objeto com ID e Nome
+    operador_detalhes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MovimentacaoStock
+        fields = [
+            'id',
+            'stock_filial',
+            'tipo',
+            'tipo_display',
+            'quantidade',
+            'origem_destino',
+            'operador_detalhes',  # <--- Novo objeto estruturado
+            'data'
+        ]
+
+    def get_operador_detalhes(self, obj):
+        """
+        Retorna o ID e o Nome do operador de forma garantida.
+        Se o nome completo estiver vazio, faz fallback para o username.
+        """
+        user = obj.operador
+        if not user:
+            return None
+            
+        # Tenta obter o nome completo
+        nome_completo = f"{user.first_name} {user.last_name}".strip()
+        
+        # Se o nome completo estiver vazio, usa o username (ou o email se preferires)
+        if not nome_completo:
+            nome_completo = getattr(user, 'username', 'Sistema')
+
+        return {
+            "id": str(user.id),
+            "nome": nome_completo
+        }
+
+
+class ExecutarMovimentacaoSerializer(serializers.Serializer):
+    tipo = serializers.ChoiceField(choices=['E', 'S'])
+    quantidade = serializers.DecimalField(max_digits=12, decimal_places=3)
+    origem_destino = serializers.CharField(max_length=255)
+
+    def validate(self, data):
+        """
+        Validações de regras de negócio antes de executar a mutação.
+        """
+        tipo = data.get('tipo')
+        quantidade = data.get('quantidade')
+
+        # 1. Impedir movimentações com valores zero ou negativos enviados no payload
+        if quantidade <= 0:
+            raise ValidationError({
+                "quantidade": "A quantidade movimentada deve ser estritamente superior a zero."
+            })
+
+        # Recuperamos o registo de stock que foi passado no contexto da view
+        stock_filial = self.context.get('stock_filial')
+        
+        if stock_filial and tipo == 'S':
+            # 2. Regra de Ouro: Impedir que o stock fique negativo numa Saída
+            if stock_filial.quantidade < quantidade:
+                raise ValidationError({
+                    "quantidade": f"Rutura de Stock! Operação rejeitada. Stock atual disponível: {stock_filial.quantidade}, mas tentou retirar: {quantidade}."
+                })
+
+        return data
+
+    def save(self, stock_filial, operador):
+        tipo = self.validated_data['tipo']
+        quantidade = self.validated_data['quantidade']
+        origem_destino = self.validated_data['origem_destino']
+
+        with transaction.atomic():
+            # Executa a operação matemática com segurança
+            if tipo == 'E':
+                stock_filial.quantidade += quantidade
+            elif tipo == 'S':
+                stock_filial.quantidade -= quantidade
+            
+            stock_filial.save()
+
+            # Grava o histórico imutável
+            movimentacao = MovimentacaoStock.objects.create(
+                stock_filial=stock_filial,
+                tipo=tipo,
+                quantidade=quantidade,
+                origem_destino=origem_destino,
+                operador=operador
+            )
+            
+        return movimentacao

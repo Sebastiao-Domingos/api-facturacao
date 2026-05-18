@@ -3,6 +3,7 @@ from apps.organizacao.models.base import BaseModel
 import random, os
 from PIL import Image
 from django.core.files.base import ContentFile
+from django.conf import settings
 from io import BytesIO
 
 
@@ -132,3 +133,42 @@ class Stock(BaseModel):
 
     def __str__(self):
         return f"{self.produto.nome} na {self.filial.nome}: {self.quantidade}"
+
+
+class MovimentacaoStock(BaseModel):
+    TIPO_MOVIMENTACAO = [
+        ('E', 'Entrada (Compra/Ajuste Positivo)'),
+        ('S', 'Saída (Venda/Quebra/Ajuste Negativo)'),
+    ]
+
+    # Aponta diretamente para o par Produto-Filial (Teu model Stock)
+    stock_filial = models.ForeignKey(
+        Stock, 
+        on_delete=models.CASCADE, 
+        related_name='movimentacoes'
+    )
+    tipo = models.CharField(max_length=1, choices=TIPO_MOVIMENTACAO)
+    
+    # Herda as 3 casas decimais que definiste no model Stock
+    quantidade = models.DecimalField(max_digits=12, decimal_places=3)
+    
+    # Justificação (Obrigatório para auditoria fiscal da AGT em ajustes manuais)
+    origem_destino = models.CharField(
+        max_length=255, 
+        help_text="Ex: FT-2026/001 (Venda), Entrada de Fornecedor, Ajuste de Inventário"
+    )
+    
+    # Rastreabilidade: Quem fez a movimentação?
+    operador = models.ForeignKey(
+       settings.AUTH_USER_MODEL, # Ajusta para o teu Custom User Model se tiveres um
+        on_delete=models.PROTECT,
+        related_name='movimentacoes_stock'
+    )
+
+    class Meta:
+        verbose_name = "Movimentação de Stock"
+        verbose_name_plural = "Movimentações de Stock"
+        ordering = ['-created_at'] # As mais recentes aparecem primeiro
+
+    def __str__(self):
+        return f"{self.stock_filial.produto.nome} ({self.stock_filial.filial.nome}) - {self.tipo}: {self.quantidade}"
