@@ -1,7 +1,11 @@
 from rest_framework import serializers
-from ..models import Categoria, UnidadeMedida, TaxaIva, Produto, Stock, MovimentacaoStock
-from django.db import transaction
+from ..models import Categoria, UnidadeMedida, TaxaIva, Produto, Stock, MovimentacaoStock, SerieDocumento, LinhaDocumento , Pagamento,Documento
+from django.db import transaction, models
 from rest_framework.exceptions import ValidationError
+# apps/faturacao/serializers.py
+from django.utils import timezone
+from apps.organizacao.models import  Filial
+from apps.clientes.models import  Cliente
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -46,14 +50,18 @@ class ProdutoSerializer(serializers.ModelSerializer):
 
 class StockSerializer(serializers.ModelSerializer):
     produto_nome = serializers.ReadOnlyField(source='produto.nome')
+    preco_venda = serializers.ReadOnlyField(source='produto.preco_venda')
     filial_nome = serializers.ReadOnlyField(source='filial.nome')
     codigo_barras = serializers.ReadOnlyField(source='produto.codigo_barras')
+    taxa_iva = serializers.ReadOnlyField(source='produto.taxa_iva.valor')
+    tipo = serializers.ReadOnlyField(source='produto.tipo')
+    ativo = serializers.ReadOnlyField(source='produto.ativo')
 
     class Meta:
         model = Stock
         fields = [
             'id', 'produto', 'produto_nome', 'codigo_barras', 
-            'filial', 'filial_nome', 'quantidade', 'stock_minimo'
+            'filial', 'filial_nome', 'quantidade', 'stock_minimo', "preco_venda", "taxa_iva", "tipo", "ativo", 
         ]
 
 
@@ -153,3 +161,234 @@ class ExecutarMovimentacaoSerializer(serializers.Serializer):
             )
             
         return movimentacao
+
+
+
+
+class LinhaDocumentoSerializer(serializers.ModelSerializer):
+    produto_nome = serializers.ReadOnlyField(source='produto.nome')
+    produto_codigo = serializers.ReadOnlyField(source='produto.codigo_barras')
+    subtotal = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    valor_iva = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    total = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    
+    class Meta:
+        model = LinhaDocumento
+        fields = [
+            'id', 'produto', 'produto_nome', 'produto_codigo',
+            'descricao', 'quantidade', 'preco_unitario', 'desconto_pct',
+            'taxa_iva', 'subtotal', 'valor_iva', 'total'
+        ]
+        read_only_fields = ['subtotal', 'valor_iva', 'total']
+
+
+class PagamentoSerializer(serializers.ModelSerializer):
+    metodo_display = serializers.ReadOnlyField(source='get_metodo_display')
+    operador_nome = serializers.ReadOnlyField(source='operador.get_full_name')
+    
+    class Meta:
+        model = Pagamento
+        fields = [
+            'id', 'valor', 'metodo', 'metodo_display',
+            'referencia', 'data_pagamento', 'operador', 'operador_nome'
+        ]
+        read_only_fields = ['data_pagamento', 'operador']
+
+
+class DocumentoListSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.ReadOnlyField(source='get_tipo_display')
+    estado_display = serializers.ReadOnlyField(source='get_estado_display')
+    cliente_nome = serializers.ReadOnlyField(source='cliente.nome')
+    cliente_nif = serializers.ReadOnlyField(source='cliente.nif')
+    filial_nome = serializers.ReadOnlyField(source='filial.nome')
+    saldo_pendente = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = Documento
+        fields = [
+            'id', 'numero', 'tipo', 'tipo_display', 'estado', 'estado_display',
+            'cliente', 'cliente_nome', 'cliente_nif', 'filial', 'filial_nome',
+            'subtotal', 'total_iva', 'total', 'total_pago', 'saldo_pendente',
+            'data_emissao', 'data_vencimento'
+        ]
+
+
+class DocumentoDetailSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.ReadOnlyField(source='get_tipo_display')
+    estado_display = serializers.ReadOnlyField(source='get_estado_display')
+    saldo_pendente = serializers.ReadOnlyField()
+    linhas = LinhaDocumentoSerializer(many=True, read_only=True)
+    pagamentos = PagamentoSerializer(many=True, read_only=True)
+    
+    cliente = serializers.SerializerMethodField()
+    filial = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Documento
+        fields = [
+            'id', 'numero', 'tipo', 'tipo_display', 'estado', 'estado_display',
+            'cliente', 'filial', 'subtotal', 'total_iva', 'total',
+            'total_pago', 'saldo_pendente', 'data_emissao', 'data_vencimento',
+            'observacao', 'linhas', 'pagamentos', 'created_at'
+        ]
+    
+    def get_cliente(self, obj):
+        return {
+            'id': str(obj.cliente.id),
+            'nome': obj.cliente.nome,
+            'nif': obj.cliente.nif,
+            'email': obj.cliente.email,
+            'telefone': obj.cliente.telefone,
+        } if obj.cliente else None
+    
+    def get_filial(self, obj):
+        return {
+            'id': str(obj.filial.id),
+            'nome': obj.filial.nome,
+        } if obj.filial else None
+
+
+class DocumentoCreateSerializer(serializers.Serializer):
+    """Serializer para criação de documento com linhas"""
+    cliente_id = serializers.UUIDField(required=True)
+    filial_id = serializers.UUIDField(required=True)
+    tipo = serializers.ChoiceField(choices=Documento.TIPO_CHOICES)
+    data_vencimento = serializers.DateField(required=False, allow_null=True)
+    observacao = serializers.CharField(required=False, allow_blank=True)
+    linhas = serializers.ListField(
+        child=serializers.DictField(),
+        required=True,
+        min_length=1
+    )
+    
+    def validate_cliente_id(self, value):
+        try:
+            cliente = Cliente.objects.get(id=value, ativo=True)
+            return cliente
+        except Cliente.DoesNotExist:
+            raise serializers.ValidationError("Cliente não encontrado ou inativo")
+    
+    def validate_filial_id(self, value):
+        try:
+            filial = Filial.objects.get(id=value, ativo=True)
+            return filial
+        except Filial.DoesNotExist:
+            raise serializers.ValidationError("Filial não encontrada ou inativa")
+    
+    def validate_linhas(self, value):
+        if not value:
+            raise serializers.ValidationError("Adicione pelo menos um item")
+        
+        for idx, linha in enumerate(value):
+            if not linha.get('produto_id'):
+                raise serializers.ValidationError(f"Produto não informado na linha {idx + 1}")
+            
+            try:
+                produto = Produto.objects.get(id=linha['produto_id'], ativo=True)
+                linha['produto'] = produto
+            except Produto.DoesNotExist:
+                raise serializers.ValidationError(f"Produto não encontrado na linha {idx + 1}")
+            
+            if linha.get('quantidade', 0) <= 0:
+                raise serializers.ValidationError(f"Quantidade inválida na linha {idx + 1}")
+        
+        return value
+    
+    @transaction.atomic
+    def create(self, validated_data):
+        from apps.faturacao.utils import NumeroDocumentoGenerator
+        
+        cliente = validated_data['cliente_id']
+        filial = validated_data['filial_id']
+        tipo = validated_data['tipo']
+        linhas_data = validated_data['linhas']
+        
+        # Gera o número do documento
+        numero = NumeroDocumentoGenerator.gerar_numero(filial.id, tipo)
+        
+        # Cria o documento
+        documento = Documento.objects.create(
+            numero=numero,
+            tipo=tipo,
+            estado='RASCUNHO',
+            cliente=cliente,
+            filial=filial,
+            data_vencimento=validated_data.get('data_vencimento'),
+            observacao=validated_data.get('observacao', '')
+        )
+        
+        # Cria as linhas e calcula totais
+        subtotal = 0
+        total_iva = 0
+        
+        for linha_data in linhas_data:
+            produto = linha_data['produto']
+            quantidade = linha_data['quantidade']
+            preco_unitario = linha_data.get('preco_unitario', produto.preco_venda)
+            desconto_pct = linha_data.get('desconto_pct', 0)
+            
+            # Calcula valores da linha
+            subtotal_linha = quantidade * preco_unitario * (1 - desconto_pct / 100)
+            taxa_iva = produto.taxa_iva.valor
+            valor_iva_linha = subtotal_linha * (taxa_iva / 100)
+            total_linha = subtotal_linha + valor_iva_linha
+            
+            LinhaDocumento.objects.create(
+                documento=documento,
+                produto=produto,
+                descricao=produto.nome,
+                codigo_barras=produto.codigo_barras,
+                quantidade=quantidade,
+                preco_unitario=preco_unitario,
+                desconto_pct=desconto_pct,
+                taxa_iva=taxa_iva,
+                subtotal=subtotal_linha,
+                valor_iva=valor_iva_linha,
+                total=total_linha
+            )
+            
+            subtotal += subtotal_linha
+            total_iva += valor_iva_linha
+        
+        # Atualiza totais do documento
+        documento.subtotal = subtotal
+        documento.total_iva = total_iva
+        documento.total = subtotal + total_iva
+        documento.save()
+        
+        return documento
+
+
+class PagamentoCreateSerializer(serializers.Serializer):
+    """Serializer para criação de pagamento"""
+    valor = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0.01)
+    metodo = serializers.ChoiceField(choices=Pagamento.METODO_CHOICES)
+    referencia = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_valor(self, value):
+        documento = self.context.get('documento')
+        if documento and value > documento.saldo_pendente:
+            raise serializers.ValidationError(
+                f"Valor excede o saldo pendente. Saldo: {documento.saldo_pendente}"
+            )
+        return value
+    
+    @transaction.atomic
+    def create(self, validated_data):
+        documento = self.context.get('documento')
+        user = self.context.get('request').user
+        
+        pagamento = Pagamento.objects.create(
+            documento=documento,
+            valor=validated_data['valor'],
+            metodo=validated_data['metodo'],
+            referencia=validated_data.get('referencia', ''),
+            operador=user
+        )
+        
+        # Atualiza total_pago do documento
+        total_pago = documento.pagamentos.aggregate(total=models.Sum('valor'))['total'] or 0
+        documento.total_pago = total_pago
+        documento.atualizar_estado()
+        
+        return pagamento
