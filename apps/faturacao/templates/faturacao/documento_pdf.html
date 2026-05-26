@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ documento.numero }}</title>
+    <style>
+        @page {
+            size: a4;
+            margin: 2cm;
+        }
+        body {
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 15px;
+        }
+        .empresa {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .documento-tipo {
+            font-size: 16px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .info-section {
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .info-box {
+            width: 48%;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .info-box strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .text-right {
+            text-align: right;
+        }
+        .total-row {
+            font-weight: bold;
+            background-color: #f2f2f2;
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 10px;
+            color: #777;
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
+        }
+        .observacao {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #eee;
+            background-color: #fafafa;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="empresa">{{ documento.filial.empresa.nome_fantasia }}</div>
+        <div>{{ documento.filial.endereco.rua }}, {{ documento.filial.endereco.bairro }}</div>
+        <div>{{ documento.filial.endereco.municipio_nome }} - {{ documento.filial.endereco.provincia_nome }}</div>
+        <div>NIF: {{ documento.filial.empresa.nif }}</div>
+        <div class="documento-tipo">{{ documento.get_tipo_display }} Nº {{ documento.numero }}</div>
+    </div>
+
+    <div class="info-section">
+        <div class="info-box">
+            <strong>📄 DOCUMENTO</strong>
+            <p><strong>Data de Emissão:</strong> {{ documento.data_emissao|date:"d/m/Y H:i" }}</p>
+            {% if documento.data_vencimento %}
+            <p><strong>Data de Vencimento:</strong> {{ documento.data_vencimento|date:"d/m/Y" }}</p>
+            {% endif %}
+            <p><strong>Filial:</strong> {{ documento.filial.nome }}</p>
+            <p><strong>Estado:</strong> {{ documento.get_estado_display }}</p>
+        </div>
+        <div class="info-box">
+            <strong>👤 CLIENTE</strong>
+            <p><strong>Nome:</strong> {{ documento.cliente.nome }}</p>
+            <p><strong>NIF:</strong> {{ documento.cliente.nif|default:"---" }}</p>
+            <p><strong>Email:</strong> {{ documento.cliente.email|default:"---" }}</p>
+            <p><strong>Telefone:</strong> {{ documento.cliente.telefone|default:"---" }}</p>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Produto</th>
+                <th>Código</th>
+                <th class="text-right">Qtd</th>
+                <th class="text-right">Preço Unit.</th>
+                <th class="text-right">Desconto</th>
+                <th class="text-right">Subtotal</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for linha in linhas %}
+            <tr>
+                <td>{{ linha.descricao }}</td>
+                <td>{{ linha.codigo_barras|default:"---" }}</td>
+                <td class="text-right">{{ linha.quantidade|floatformat:3 }}</td>
+                <td class="text-right">{{ linha.preco_unitario|floatformat:2 }} Kz</td>
+                <td class="text-right">{{ linha.desconto_pct|floatformat:0 }}%</td>
+                <td class="text-right">{{ linha.subtotal|floatformat:2 }} Kz</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="5" class="text-right"><strong>Subtotal:</strong></td>
+                <td class="text-right">{{ documento.subtotal|floatformat:2 }} Kz</td>
+            </tr>
+            <tr>
+                <td colspan="5" class="text-right"><strong>IVA:</strong></td>
+                <td class="text-right">{{ documento.total_iva|floatformat:2 }} Kz</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="5" class="text-right"><strong>TOTAL:</strong></td>
+                <td class="text-right">{{ documento.total|floatformat:2 }} Kz</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    {% if documento.observacao %}
+    <div class="observacao">
+        <strong>📝 Observações:</strong><br>
+        {{ documento.observacao }}
+    </div>
+    {% endif %}
+
+    <div class="footer">
+        Documento emitido por computador - Válido como documento fiscal<br>
+        {{ documento.created_at|date:"d/m/Y H:i:s" }}
+    </div>
+</body>
+</html>

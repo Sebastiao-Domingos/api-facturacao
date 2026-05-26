@@ -1,15 +1,14 @@
 # apps/faturacao/services.py
 from django.db import transaction
 from django.utils import timezone
-from .models import Documento, LinhaDocumento, Stock, MovimentacaoStock
-from apps.faturacao.models import Produto
+from .models import Documento, Stock, MovimentacaoStock
 
 class DocumentoService:
     """Serviços para gestão de documentos fiscais"""
     
     @staticmethod
     @transaction.atomic
-    def emitir_documento(documento_id):
+    def emitir_documento(documento_id, operador):
         """Emite um documento (atribui número e atualiza stock)"""
         documento = Documento.objects.select_for_update().get(id=documento_id)
         
@@ -23,12 +22,12 @@ class DocumentoService:
         
         # Atualiza stock (apenas para facturas e saidas)
         if documento.tipo == 'FACTURA':
-            DocumentoService._atualizar_stock(documento)
+            DocumentoService._atualizar_stock(documento, operador)
         
         return documento
     
     @staticmethod
-    def _atualizar_stock(documento):
+    def _atualizar_stock(documento , operador):
         """Atualiza o stock baseado nas linhas do documento"""
         for linha in documento.linhas.all():
             try:
@@ -54,7 +53,7 @@ class DocumentoService:
                     tipo='S',
                     quantidade=linha.quantidade,
                     origem_destino=f"Venda - Documento {documento.numero}",
-                    operador=documento.created_by if hasattr(documento, 'created_by') else None
+                    operador=operador
                 )
                 
             except Stock.DoesNotExist:
@@ -79,7 +78,7 @@ class DocumentoService:
         return documento
     
     @staticmethod
-    def _restaurar_stock(documento):
+    def _restaurar_stock(documento, operador):
         """Restaura o stock ao anular um documento"""
         for linha in documento.linhas.all():
             stock = Stock.objects.get(
@@ -95,5 +94,5 @@ class DocumentoService:
                 tipo='E',
                 quantidade=linha.quantidade,
                 origem_destino=f"Anulação de documento {documento.numero}",
-                operador=documento.updated_by if hasattr(documento, 'updated_by') else None
+                operador=operador
             )

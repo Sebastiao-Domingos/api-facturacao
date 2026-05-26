@@ -39,11 +39,23 @@ class ProdutoViewSet(BaseViewSet):
     ordering_fields = ['nome']
     pagination_class = PadraoPaginacao
 
-class StockViewSet(viewsets.ReadOnlyModelViewSet): # Geralmente stock não se apaga, apenas se consulta ou ajusta
+
+class StockViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Stock.objects.select_related('produto', 'filial').all()
     serializer_class = StockSerializer
-    filterset_fields = ['filial', 'produto']
-    ordering_fields = ['quantidade']
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = {
+        'filial': ['exact'],
+        'produto': ['exact'],
+        'produto__nome': ['icontains'],
+        'produto__codigo_barras': ['icontains'],
+        'produto__categoria': ['exact'],
+        'produto__tipo': ['exact'],
+        'produto__ativo': ['exact'],
+        'quantidade': ['gte', 'lte'],
+        'stock_minimo': ['gte', 'lte'],
+    }
+    ordering_fields = ['quantidade', 'produto__nome']
     pagination_class = PadraoPaginacao
 
 
@@ -116,9 +128,6 @@ class MovimentacaoStockViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 
-
-
-
 class DocumentoViewSet(viewsets.ModelViewSet):
     """ViewSet para Documentos Fiscais"""
     
@@ -166,7 +175,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
     def emitir(self, request, pk=None):
         """Emite um documento (atribui número e atualiza stock)"""
         try:
-            documento = DocumentoService.emitir_documento(pk)
+            documento = DocumentoService.emitir_documento(pk , request.user)
             serializer = DocumentoDetailSerializer(documento)
             return Response(serializer.data)
         except ValueError as e:

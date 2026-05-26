@@ -50,18 +50,14 @@ class ProdutoSerializer(serializers.ModelSerializer):
 
 class StockSerializer(serializers.ModelSerializer):
     produto_nome = serializers.ReadOnlyField(source='produto.nome')
-    preco_venda = serializers.ReadOnlyField(source='produto.preco_venda')
     filial_nome = serializers.ReadOnlyField(source='filial.nome')
-    codigo_barras = serializers.ReadOnlyField(source='produto.codigo_barras')
-    taxa_iva = serializers.ReadOnlyField(source='produto.taxa_iva.valor')
-    tipo = serializers.ReadOnlyField(source='produto.tipo')
-    ativo = serializers.ReadOnlyField(source='produto.ativo')
+    produto_detalhes = ProdutoSerializer(source = "produto" , read_only = True)
 
     class Meta:
         model = Stock
         fields = [
-            'id', 'produto', 'produto_nome', 'codigo_barras', 
-            'filial', 'filial_nome', 'quantidade', 'stock_minimo', "preco_venda", "taxa_iva", "tipo", "ativo", 
+            'id', 'produto', 'produto_nome', 
+            'filial', 'filial_nome', 'quantidade', 'stock_minimo', "produto_detalhes", 
         ]
 
 
@@ -247,9 +243,9 @@ class DocumentoDetailSerializer(serializers.ModelSerializer):
             'nome': obj.filial.nome,
         } if obj.filial else None
 
+from decimal import Decimal
 
 class DocumentoCreateSerializer(serializers.Serializer):
-    """Serializer para criação de documento com linhas"""
     cliente_id = serializers.UUIDField(required=True)
     filial_id = serializers.UUIDField(required=True)
     tipo = serializers.ChoiceField(choices=Documento.TIPO_CHOICES)
@@ -260,54 +256,73 @@ class DocumentoCreateSerializer(serializers.Serializer):
         required=True,
         min_length=1
     )
-    
+
     def validate_cliente_id(self, value):
         try:
             cliente = Cliente.objects.get(id=value, ativo=True)
             return cliente
         except Cliente.DoesNotExist:
             raise serializers.ValidationError("Cliente não encontrado ou inativo")
-    
+
     def validate_filial_id(self, value):
         try:
             filial = Filial.objects.get(id=value, ativo=True)
             return filial
         except Filial.DoesNotExist:
             raise serializers.ValidationError("Filial não encontrada ou inativa")
-    
+
     def validate_linhas(self, value):
         if not value:
             raise serializers.ValidationError("Adicione pelo menos um item")
-        
+
         for idx, linha in enumerate(value):
-            if not linha.get('produto_id'):
+            if 'produto' not in linha:
                 raise serializers.ValidationError(f"Produto não informado na linha {idx + 1}")
-            
+
+            produto_id = linha['produto']
             try:
-                produto = Produto.objects.get(id=linha['produto_id'], ativo=True)
-                linha['produto'] = produto
+                produto = Produto.objects.get(id=produto_id, ativo=True)
+                linha['produto_obj'] = produto   # guarda o objeto
             except Produto.DoesNotExist:
                 raise serializers.ValidationError(f"Produto não encontrado na linha {idx + 1}")
-            
-            if linha.get('quantidade', 0) <= 0:
+
+            # Converte valores numéricos para Decimal
+            try:
+                linha['quantidade'] = Decimal(str(linha.get('quantidade', 0)))
+                linha['preco_unitario'] = Decimal(str(linha.get('preco_unitario', 0)))
+                linha['desconto_pct'] = Decimal(str(linha.get('desconto_pct', 0)))
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(f"Valor numérico inválido na linha {idx + 1}")
+
+            if linha['quantidade'] <= 0:
                 raise serializers.ValidationError(f"Quantidade inválida na linha {idx + 1}")
-        
+
         return value
-    
+
     @transaction.atomic
     def create(self, validated_data):
         from apps.faturacao.utils import NumeroDocumentoGenerator
-        
+
         cliente = validated_data['cliente_id']
         filial = validated_data['filial_id']
         tipo = validated_data['tipo']
         linhas_data = validated_data['linhas']
-        
-        # Gera o número do documento
+
+        # Obtém ou cria a série de documento
+        serie, _ = SerieDocumento.objects.get_or_create(
+            filial=filial,
+            tipo=tipo,
+            defaults={
+                'prefixo': 'FAT' if tipo == 'FACTURA' else 'PRO',
+                'numero_atual': 0,
+                'ativo': True
+            }
+        )
+
         numero = NumeroDocumentoGenerator.gerar_numero(filial.id, tipo)
-        
-        # Cria o documento
+
         documento = Documento.objects.create(
+            serie=serie,
             numero=numero,
             tipo=tipo,
             estado='RASCUNHO',
@@ -316,23 +331,24 @@ class DocumentoCreateSerializer(serializers.Serializer):
             data_vencimento=validated_data.get('data_vencimento'),
             observacao=validated_data.get('observacao', '')
         )
-        
-        # Cria as linhas e calcula totais
-        subtotal = 0
-        total_iva = 0
-        
+
+        subtotal = Decimal('0')
+        total_iva = Decimal('0')
+        CEM = Decimal('100')
+        UM = Decimal('1')
+
         for linha_data in linhas_data:
-            produto = linha_data['produto']
+            produto = linha_data['produto_obj']
             quantidade = linha_data['quantidade']
-            preco_unitario = linha_data.get('preco_unitario', produto.preco_venda)
-            desconto_pct = linha_data.get('desconto_pct', 0)
-            
-            # Calcula valores da linha
-            subtotal_linha = quantidade * preco_unitario * (1 - desconto_pct / 100)
-            taxa_iva = produto.taxa_iva.valor
-            valor_iva_linha = subtotal_linha * (taxa_iva / 100)
+            preco_unitario = linha_data['preco_unitario']
+            desconto_pct = linha_data['desconto_pct']
+
+            # Cálculos com Decimal
+            subtotal_linha = quantidade * preco_unitario * (UM - desconto_pct / CEM)
+            taxa_iva = produto.taxa_iva.valor  # já é Decimal
+            valor_iva_linha = subtotal_linha * (taxa_iva / CEM)
             total_linha = subtotal_linha + valor_iva_linha
-            
+
             LinhaDocumento.objects.create(
                 documento=documento,
                 produto=produto,
@@ -346,24 +362,23 @@ class DocumentoCreateSerializer(serializers.Serializer):
                 valor_iva=valor_iva_linha,
                 total=total_linha
             )
-            
+
             subtotal += subtotal_linha
             total_iva += valor_iva_linha
-        
-        # Atualiza totais do documento
+
         documento.subtotal = subtotal
         documento.total_iva = total_iva
         documento.total = subtotal + total_iva
         documento.save()
-        
-        return documento
 
+        return documento
 
 class PagamentoCreateSerializer(serializers.Serializer):
     """Serializer para criação de pagamento"""
     valor = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0.01)
     metodo = serializers.ChoiceField(choices=Pagamento.METODO_CHOICES)
     referencia = serializers.CharField(required=False, allow_blank=True)
+
     
     def validate_valor(self, value):
         documento = self.context.get('documento')
@@ -392,3 +407,27 @@ class PagamentoCreateSerializer(serializers.Serializer):
         documento.atualizar_estado()
         
         return pagamento
+
+
+class PagamentoSerializer(serializers.ModelSerializer):
+    metodo_display = serializers.ReadOnlyField(source='get_metodo_display')
+    operador_nome = serializers.ReadOnlyField(source='operador.get_full_name')
+    
+    # 🔹 Adiciona dados do documento
+    documento_numero = serializers.ReadOnlyField(source='documento.numero')
+    documento_cliente_nome = serializers.ReadOnlyField(source='documento.cliente.nome')
+    documento_id = serializers.ReadOnlyField(source='documento.id')
+    
+    # 🔹 Adiciona dados do cliente
+    cliente_nif = serializers.ReadOnlyField(source='documento.cliente.nif')
+    filial_nome = serializers.ReadOnlyField(source='documento.filial.nome')
+    cliente_id = serializers.ReadOnlyField(source='documento.cliente.id')
+    filial_id = serializers.ReadOnlyField(source='documento.filial.id')
+    
+    class Meta:
+        model = Pagamento
+        fields = [
+            'id', 'documento', 'documento_id', 'documento_numero', 'documento_cliente_nome',
+            'valor', 'metodo', 'metodo_display', 'referencia',
+            'data_pagamento', 'operador', 'operador_nome', "filial_nome", "cliente_nif", "cliente_id", "filial_id"
+        ]
