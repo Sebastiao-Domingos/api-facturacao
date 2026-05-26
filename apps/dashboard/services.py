@@ -1,11 +1,12 @@
 # apps/dashboard/services.py (atualizado)
-from django.db.models import Sum, Count, Q, F
-from django.db.models.functions import TruncMonth
+from django.db.models import Sum, Count, F, ExpressionWrapper,DecimalField
+from django.db.models.functions import TruncMonth , TruncDay, TruncWeek
 from datetime import datetime, timedelta
 from calendar import month_name
 from apps.faturacao.models import Documento, LinhaDocumento, MovimentacaoStock,Produto,Stock
 from apps.organizacao.models import Funcionario, Filial
 from apps.clientes.models import Cliente
+
 
 class DashboardService:
     
@@ -244,3 +245,144 @@ class DashboardService:
             })
         
         return resumo
+    
+
+    # apps/dashboard/services.py
+    @staticmethod
+    def get_vendas_por_periodo(data_inicio, data_fim, filial_id=None, agrupamento='mes'):
+        queryset = Documento.objects.filter(
+            tipo='FACTURA',
+            estado='PAGA',
+            data_emissao__date__gte=data_inicio,
+            data_emissao__date__lte=data_fim
+        )
+        if filial_id:
+            queryset = queryset.filter(filial_id=filial_id)
+
+        if agrupamento == 'dia':
+            trunc = TruncDay('data_emissao')
+            formatacao = '%Y-%m-%d'
+        elif agrupamento == 'semana':
+            trunc = TruncWeek('data_emissao')
+            formatacao = '%Y-%m-%d'  # semana início
+        else:  # mês
+            trunc = TruncMonth('data_emissao')
+            formatacao = '%Y-%m'
+
+        vendas = queryset.annotate(periodo=trunc).values('periodo').annotate(
+            total=Sum('total'),
+            quantidade=Count('id')
+        ).order_by('periodo')
+
+        return [
+            {
+                'periodo': p['periodo'].strftime(formatacao) if p['periodo'] else '',
+                'total': float(p['total']) if p['total'] else 0,
+                'quantidade': p['quantidade'],
+            }
+            for p in vendas
+        ]
+
+
+
+
+# apps/dashboard/services.py (adicione no final da classe)
+
+    @staticmethod
+    def get_relatorio_clientes(data_inicio, data_fim, filial_id=None, limit=50):
+        """Retorna lista de clientes com total comprado no período"""
+        from apps.clientes.models import Cliente
+        from django.db.models import Sum
+
+        # Base de clientes que fizeram compras no período
+        qs_clientes = Cliente.objects.filter(
+            documentos__tipo='FACTURA',
+            documentos__estado='PAGA',
+            documentos__data_emissao__date__gte=data_inicio,
+            documentos__data_emissao__date__lte=data_fim
+        ).distinct()
+
+        if filial_id:
+            qs_clientes = qs_clientes.filter(
+                documentos__filial_id=filial_id
+            ).distinct()
+
+        resultado = []
+        for cliente in qs_clientes:
+            docs = cliente.documentos.filter(
+                tipo='FACTURA',
+                estado='PAGA',
+                data_emissao__date__gte=data_inicio,
+                data_emissao__date__lte=data_fim
+            )
+            if filial_id:
+                docs = docs.filter(filial_id=filial_id)
+            total = docs.aggregate(total=Sum('total'))['total'] or 0
+            quantidade = docs.count()
+            resultado.append({
+                'id': str(cliente.id),
+                'nome': cliente.nome,
+                'nif': cliente.nif or '',
+                'email': cliente.email or '',
+                'telefone': cliente.telefone or '',
+                'total_compras': float(total),
+                'quantidade_documentos': quantidade,
+            })
+
+        resultado.sort(key=lambda x: x['total_compras'], reverse=True)
+        return resultado[:limit]
+
+# apps/dashboard/services.py (substitua o método existente)
+
+    @staticmethod
+    def get_relatorio_produtos(data_inicio, data_fim, filial_id=None, categoria_id=None, limit=100):
+        from collections import defaultdict
+
+        linhas = LinhaDocumento.objects.filter(
+            documento__tipo='FACTURA',
+            documento__estado='PAGA',
+            documento__data_emissao__date__gte=data_inicio,
+            documento__data_emissao__date__lte=data_fim
+        ).select_related('produto')  # otimização
+
+        if filial_id:
+            linhas = linhas.filter(documento__filial_id=filial_id)
+        if categoria_id:
+            linhas = linhas.filter(produto__categoria_id=categoria_id)
+
+        produtos_dict = defaultdict(lambda: {
+            'quantidade': 0,
+            'total_vendido': 0,
+            'valor_iva': 0,
+            'nome': '',
+            'codigo': ''
+        })
+
+        for linha in linhas:
+            pid = linha.produto_id
+            produtos_dict[pid]['quantidade'] += linha.quantidade
+            produtos_dict[pid]['total_vendido'] += float(linha.quantidade) * float(linha.preco_unitario)
+            produtos_dict[pid]['valor_iva'] += float(linha.valor_iva)
+            if not produtos_dict[pid]['nome']:
+                produtos_dict[pid]['nome'] = linha.produto.nome
+                produtos_dict[pid]['codigo'] = linha.produto.codigo_barras or ''
+
+        # Ordenar por total_vendido decrescente e limitar
+        produtos_ordenados = sorted(
+            produtos_dict.items(),
+            key=lambda x: x[1]['total_vendido'],
+            reverse=True
+        )[:limit]
+
+        return [
+            {
+                'id': str(pid),
+                'nome': dados['nome'],
+                'codigo': dados['codigo'],
+                'quantidade': int(dados['quantidade']),
+                'total_vendido': float(dados['total_vendido']),
+                'valor_iva': float(dados['valor_iva']),
+            }
+            for pid, dados in produtos_ordenados
+        ]
+

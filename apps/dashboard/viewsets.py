@@ -11,23 +11,13 @@ from apps.faturacao.models import Documento, LinhaDocumento, MovimentacaoStock, 
 from apps.organizacao.models import Funcionario, Filial
 from apps.clientes.models import Cliente
 from .serializers import DashboardSerializer
+from .services import DashboardService
 
 
 class DashboardViewSet(viewsets.GenericViewSet):
-    """
-    Dashboard com métricas e indicadores para o sistema de faturação.
-    
-    Endpoints:
-    - GET /api/v1/dashboard/ - Dashboard completo
-    - GET /api/v1/dashboard/kpis/ - Apenas KPIs
-    - GET /api/v1/dashboard/vendas/ - Vendas por período
-    - GET /api/v1/dashboard/top-produtos/ - Top produtos mais vendidos
-    - GET /api/v1/dashboard/alertas/ - Alertas de stock
-    - GET /api/v1/dashboard/movimentacoes/ - Últimas movimentações
-    - GET /api/v1/dashboard/resumo-filiais/ - Resumo por filial
-    """
     
     permission_classes = [IsAuthenticated]
+    filter_backends = [] 
     
     def get_queryset(self):
         return None
@@ -329,7 +319,7 @@ class DashboardViewSet(viewsets.GenericViewSet):
     def vendas(self, request):
         """Retorna vendas por período"""
         filial_id = self.get_filial_id()
-        data = self.get_vendas_ultimos_12_meses(filial_id)
+        data = DashboardService.get_vendas_ultimos_12_meses(filial_id)
         return Response(data)
     
     @action(detail=False, methods=['get'], url_path='top-produtos')
@@ -337,14 +327,14 @@ class DashboardViewSet(viewsets.GenericViewSet):
         """Retorna os produtos mais vendidos"""
         filial_id = self.get_filial_id()
         limit = int(request.query_params.get('limit', 5))
-        data = self.get_top_produtos(limit, filial_id)
+        data = DashboardService.get_top_produtos(limit, filial_id)
         return Response(data)
     
     @action(detail=False, methods=['get'], url_path='alertas')
     def alertas(self, request):
         """Retorna alertas de stock"""
         filial_id = self.get_filial_id()
-        data = self.get_alertas_stock(filial_id)
+        data = DashboardService.get_alertas_stock(filial_id)
         return Response(data)
     
     @action(detail=False, methods=['get'], url_path='movimentacoes')
@@ -352,7 +342,7 @@ class DashboardViewSet(viewsets.GenericViewSet):
         """Retorna as últimas movimentações de stock"""
         filial_id = self.get_filial_id()
         limit = int(request.query_params.get('limit', 10))
-        data = self.get_ultimas_movimentacoes(limit, filial_id)
+        data = DashboardService.get_ultimas_movimentacoes(limit, filial_id)
         return Response(data)
     
     @action(detail=False, methods=['get'], url_path='resumo-filiais')
@@ -366,5 +356,56 @@ class DashboardViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        data = self.get_resumo_filiais()
+        data = DashboardService.get_resumo_filiais()
         return Response(data)
+    
+
+
+    @action(detail=False, methods=['get'], url_path='vendas-periodo')
+    def vendas_periodo(self, request):
+        data_inicio = request.query_params.get('data_inicio')
+        data_fim = request.query_params.get('data_fim')
+        if not data_inicio or not data_fim:
+            return Response({"error": "data_inicio e data_fim são obrigatórios"}, status=400)
+        filial_id = self.get_filial_id()
+        agrupamento = request.query_params.get('agrupamento', 'mes')
+        data = DashboardService.get_vendas_por_periodo(data_inicio, data_fim, filial_id, agrupamento)
+        return Response(data)
+
+    # apps/dashboard/viewsets.py (adicione dentro da classe DashboardViewSet)
+
+    @action(detail=False, methods=['get'], url_path='relatorio-clientes')
+    def relatorio_clientes(self, request):
+        """Relatório de clientes por período"""
+        data_inicio = request.query_params.get('data_inicio')
+        data_fim = request.query_params.get('data_fim')
+        if not data_inicio or not data_fim:
+            return Response(
+                {"error": "Parâmetros 'data_inicio' e 'data_fim' são obrigatórios."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        filial_id = self.get_filial_id()
+        limit = int(request.query_params.get('limit', 50))
+        data = DashboardService.get_relatorio_clientes(data_inicio, data_fim, filial_id, limit)
+        return Response(data)
+
+
+    @action(detail=False, methods=['get'], url_path='relatorio-produtos')
+    def relatorio_produtos(self, request):
+        """Relatório de produtos vendidos por período"""
+        data_inicio = request.query_params.get('data_inicio')
+        data_fim = request.query_params.get('data_fim')
+        if not data_inicio or not data_fim:
+            return Response(
+                {"error": "Parâmetros 'data_inicio' e 'data_fim' são obrigatórios."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        filial_id = self.get_filial_id()
+        categoria_id = request.query_params.get('categoria')
+        limit = int(request.query_params.get('limit', 100))
+        data = DashboardService.get_relatorio_produtos(
+            data_inicio, data_fim, filial_id, categoria_id, limit
+        )
+        return Response(data)
+
+
