@@ -308,12 +308,22 @@ class DocumentoCreateSerializer(serializers.Serializer):
         tipo = validated_data['tipo']
         linhas_data = validated_data['linhas']
 
+        prefixos = {
+            'FACTURA': 'FAT',
+            'PRO_FORMA': 'PRO',
+            'RECIBO': 'REC',
+            'NOTA_CREDITO': 'NC',
+            'NOTA_DEBITO': 'ND',
+        }
+
+        prefixo = prefixos.get(tipo, 'DOC')
+
         # Obtém ou cria a série de documento
         serie, _ = SerieDocumento.objects.get_or_create(
             filial=filial,
             tipo=tipo,
             defaults={
-                'prefixo': 'FAT' if tipo == 'FACTURA' else 'PRO',
+                'prefixo': prefixo,
                 'numero_atual': 0,
                 'ativo': True
             }

@@ -44,3 +44,41 @@ class IsAdminOrSuperAdmin(BasePermission):
             return papel in ['SUPERADMIN', 'ADMIN']
         
         return False
+    
+
+
+class IsAdminOrSameFilial(BasePermission):
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user.is_superuser:
+            return True
+        if not hasattr(user, 'funcionario'):
+            return False
+        funcionario = user.funcionario
+        if funcionario.papel == 'ADMIN':
+            # ADMIN pode ver qualquer objeto que pertença à sua empresa
+            # A lógica depende do objeto: Stock, Produto, Filial, etc.
+            return True
+        # Para outros papéis, verificar se o objeto pertence à sua filial
+        if hasattr(obj, 'filial'):
+            return obj.filial == funcionario.filial
+        return False
+    
+
+# apps/organizacao/permissions.py
+class IsAdminOrGestor(BasePermission):
+    """
+    Permissão para SUPERADMIN, ADMIN ou GESTOR.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if request.user.is_superuser:
+            return True
+
+        if hasattr(request.user, 'funcionario'):
+            papel = request.user.funcionario.papel
+            return papel in ['SUPERADMIN', 'ADMIN', 'GESTOR']
+
+        return False

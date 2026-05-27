@@ -1,6 +1,7 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated 
+from core.permissions import IsAdminOrGestor, IsAdminOrSuperAdmin
 from .pagination import PadraoPaginacao
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -31,13 +32,53 @@ class BaseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
 
-class ProdutoViewSet(BaseViewSet):
-    queryset = Produto.objects.select_related('categoria', 'taxa_iva', 'unidade_medida').all()
+
+# apps/faturacao/viewsets.py
+class ProdutoViewSet(viewsets.ModelViewSet):
     serializer_class = ProdutoSerializer
+    pagination_class = PadraoPaginacao
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['nome', 'codigo_barras', 'ref_interna']
     filterset_fields = ['categoria', 'tipo', 'ativo']
     ordering_fields = ['nome']
-    pagination_class = PadraoPaginacao
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # SUPERADMIN vê todos os produtos (ativos e inativos?)
+        if user.is_superuser:
+            return Produto.objects.select_related('categoria', 'taxa_iva', 'unidade_medida').all()
+
+        if not hasattr(user, 'funcionario'):
+            return Produto.objects.none()
+
+        funcionario = user.funcionario
+
+        # ADMIN vê produtos que tenham stock em alguma filial da sua empresa
+        if funcionario.papel == 'ADMIN':
+            empresa = funcionario.filial.empresa
+            return Produto.objects.filter(
+                stocks__filial__empresa=empresa
+            ).distinct().select_related('categoria', 'taxa_iva', 'unidade_medida')
+
+        # GESTOR, OPERADOR, CONTABILISTA vêem produtos que têm stock na sua filial
+        return Produto.objects.filter(
+            stocks__filial=funcionario.filial
+        ).distinct().select_related('categoria', 'taxa_iva', 'unidade_medida')
+    
+    def get_permissions(self):
+    # Apenas SUPERADMIN e ADMIN podem criar ou actualizar
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsAdminOrSuperAdmin()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def perform_update(self, serializer):
+        serializer.save()
+
 
 
 class StockViewSet(viewsets.ReadOnlyModelViewSet):
@@ -57,9 +98,34 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
     }
     ordering_fields = ['quantidade', 'produto__nome']
     pagination_class = PadraoPaginacao
+    permission_classes = [IsAuthenticated]
+    
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.is_superuser:
+            return Stock.objects.select_related('produto', 'filial').all()
+
+        if not hasattr(user, 'funcionario'):
+            return Stock.objects.none()
+
+        funcionario = user.funcionario
+
+        # ADMIN vê stocks de todas as filiais da sua empresa
+        if funcionario.papel == 'ADMIN':
+            empresa = funcionario.filial.empresa
+            return Stock.objects.select_related('produto', 'filial').filter(
+                filial__empresa=empresa
+            )
+
+        # GESTOR, OPERADOR, CONTABILISTA vêem apenas da sua filial
+        return Stock.objects.select_related('produto', 'filial').filter(
+            filial=funcionario.filial
+        )
 
 
-    @action(detail=True, methods=['post'], url_path='movimentar')
+    @action(detail=True, methods=['post'], url_path='movimentar', permission_classes= [IsAdminOrGestor])
     def movimentar_stock(self, request, pk=None):
         stock_filial = self.get_object()
         
@@ -88,12 +154,14 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
+
 class CategoriaViewSet(BaseViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
     search_fields = ['nome']
     ordering_fields = ['nome']
     pagination_class = PadraoPaginacao
+
 
 class TaxaIvaViewSet(BaseViewSet):
     queryset = TaxaIva.objects.all()
@@ -102,14 +170,13 @@ class TaxaIvaViewSet(BaseViewSet):
     ordering_fields = ['codigo']
     pagination_class = None
 
+
 class UnidadeMedidaViewSet(BaseViewSet):
     queryset = UnidadeMedida.objects.all()
     serializer_class = UnidadeMedidaSerializer
     search_fields = ['sigla', 'nome']
     ordering_fields = ['sigla', 'nome']
     pagination_class = None
-
-
 
 
 class MovimentacaoStockViewSet(viewsets.ReadOnlyModelViewSet):
@@ -124,7 +191,6 @@ class MovimentacaoStockViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ['stock_filial'] # Crucial para o Next.js filtrar: /api/movimentacoes/?stock_filial=id_aqui
     ordering_fields = ['created_at']
     pagination_class = PadraoPaginacao
-
 
 
 

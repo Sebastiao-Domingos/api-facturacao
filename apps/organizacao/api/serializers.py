@@ -308,11 +308,10 @@ class FilialResumoSerializer(serializers.ModelSerializer):
     def get_total_funcionarios(self, obj):
         return obj.funcionarios.count()
 
-# apps/empresa/serializers/funcionario_serializer.py
+# apps/organizacao/api/serializers.py (trecho do FuncionarioSerializer)
 
 class FuncionarioSerializer(serializers.ModelSerializer):
-    # ========== CAMPOS DE LEITURA (vêm do User) ==========
-    # Estes campos são apenas para leitura na resposta da API
+    # ========== CAMPOS DE LEITURA ==========
     nome_completo = serializers.ReadOnlyField(source='user.get_full_name')
     user_email = serializers.EmailField(source='user.email', read_only=True)
     first_name_read = serializers.CharField(source='user.first_name', read_only=True)
@@ -320,63 +319,41 @@ class FuncionarioSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     is_active = serializers.ReadOnlyField(source='user.is_active')
     
-    # ========== CAMPOS DE ESCRITA (para criação/atualização) ==========
-    # Estes campos são write_only e serão usados para criar/atualizar o User
+    # ========== CAMPOS DE ESCRITA ==========
     first_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     last_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     email = serializers.EmailField(write_only=True, required=True)
-    password = serializers.CharField(
-        write_only=True, 
-        style={'input_type': 'password'}, 
-        required=False,
-        allow_blank=True
-    )
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     
-    # ========== OUTROS CAMPOS ==========
+    # ========== CAMPOS DA FILIAL ==========
+    filial_id = serializers.UUIDField(write_only=True, required=True)          # escrita
+    filial_detalhes = FilialSerializer(source='filial', read_only=True)        # leitura
     filial_nome = serializers.ReadOnlyField(source='filial.nome')
     empresa_nome = serializers.ReadOnlyField(source='filial.empresa.nome_fantasia')
+    
     endereco = EnderecoSerializer(required=False, allow_null=True)
     status_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Funcionario
         fields = [
-            # Identificação
             'id', 'user', 'user_name',
-            
-            # Nome (leitura vs escrita)
-            'first_name', 'last_name',           # escrita
-            'first_name_read', 'last_name_read', # leitura
-            'nome_completo',
-            
-            # Contacto
-            'email',          # escrita
-            'user_email',     # leitura
-            'telemovel',
-            
-            # Dados profissionais
-            'bi', 'cargo', 'papel', 'filial', 'filial_nome',
-            'empresa_nome', 'ativo',
-            
-            # Endereço
-            'endereco',
-            
-            # Senha
-            'password',
-            
-            # Metadados
+            'first_name', 'last_name',
+            'first_name_read', 'last_name_read', 'nome_completo',
+            'email', 'user_email', 'telemovel',
+            'bi', 'cargo', 'papel',
+            'filial_id', 'filial_detalhes', 'filial_nome', 'empresa_nome',
+            'ativo', 'endereco', 'password',
             'created_at', 'updated_at', 'is_active', 'status_display',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'user']
         extra_kwargs = {
-            'user': {'read_only': True},
             'papel': {'required': False, 'default': 'OPERADOR'},
             'ativo': {'required': False, 'default': True},
-            'filial': {'required': True},
             'bi': {'required': True},
             'cargo': {'required': True},
             'telemovel': {'required': True},
-            'telemovel': {'required': True},
+            "filial": {'read_only': True}
         }
 
     def get_status_display(self, obj):
@@ -387,22 +364,12 @@ class FuncionarioSerializer(serializers.ModelSerializer):
         return "Ativo"
 
     def to_representation(self, instance):
-        """
-        Personaliza a representação para incluir dados do User
-        """
         ret = super().to_representation(instance)
         if instance.user:
-            # Sobrescreve os campos de escrita com valores reais do User
             ret['first_name'] = instance.user.first_name
             ret['last_name'] = instance.user.last_name
             ret['email'] = instance.user.email
-            # Remove os campos de leitura duplicados se não quiser
-            # ret.pop('first_name_read', None)
-            # ret.pop('last_name_read', None)
-            # ret.pop('user_email', None)
         return ret
-
-    # ========== VALIDAÇÕES ==========
 
     def validate_bi(self, value):
         if not value:
@@ -463,27 +430,21 @@ class FuncionarioSerializer(serializers.ModelSerializer):
         
         return value.lower()
 
-    def validate_filial(self, value):
+    def validate_filial_id(self, value):
         if not value:
-            raise ValidationError("A filial é obrigatória.")
-        
-        if not value.ativo:
-            raise ValidationError("Não é possível associar a uma filial inativa.")
-        
-        return value
+            raise serializers.ValidationError("A filial é obrigatória.")
+        try:
+            return Filial.objects.get(id=value, ativo=True)
+        except Filial.DoesNotExist:
+            raise serializers.ValidationError("Filial não encontrada ou inativa.")
 
     def validate_papel(self, value):
         papeis_validos = ['SUPERADMIN', 'ADMIN', 'GESTOR', 'OPERADOR', 'CONTABILISTA']
-        
         if not value:
             return 'OPERADOR'
-        
         if value not in papeis_validos:
             raise ValidationError(f"Papel inválido. Opções: {', '.join(papeis_validos)}")
-        
         return value
-
-    # ========== CREATE ==========
 
     @transaction.atomic
     def create(self, validated_data):
@@ -492,48 +453,46 @@ class FuncionarioSerializer(serializers.ModelSerializer):
         last_name = validated_data.pop('last_name', '')
         email = validated_data.pop('email', None)
         password = validated_data.pop('password', None)
-        
+        filial = validated_data.pop('filial_id')   # já é uma instância de Filial
+
         if not email:
             raise ValidationError({"email": "O email é obrigatório para criar um funcionário."})
-        
-        # Cria o User
+
         user_data = {
             'username': email,
             'email': email,
             'first_name': first_name or '',
             'last_name': last_name or '',
         }
-        
         if password:
             user = User.objects.create_user(**user_data, password=password)
         else:
             senha_temporaria = User.objects.make_random_password()
             user = User.objects.create_user(**user_data, password=senha_temporaria)
-        
-        # Cria o Endereço
+
         endereco = None
         if endereco_data:
             endereco = Endereco.objects.create(**endereco_data)
-        
-        # Cria o Funcionário
+
         funcionario = Funcionario.objects.create(
             user=user,
             endereco=endereco,
+            filial=filial,
             **validated_data
         )
-        
         return funcionario
-
-    # ========== UPDATE ==========
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        validated_data.pop('filial', None)
+        
         endereco_data = validated_data.pop('endereco', None)
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
         password = validated_data.pop('password', None)
-        
+        filial_id = validated_data.pop('filial_id', None)
+
         # 1. Atualiza User
         user = instance.user
         if user:
@@ -546,8 +505,9 @@ class FuncionarioSerializer(serializers.ModelSerializer):
                 user.username = email
             if password:
                 user.set_password(password)
-            user.save()
-        
+            if any([first_name, last_name, email, password]):
+                user.save()
+
         # 2. Atualiza Endereço
         if endereco_data is not None:
             if instance.endereco:
@@ -556,12 +516,24 @@ class FuncionarioSerializer(serializers.ModelSerializer):
                 instance.endereco.save()
             elif endereco_data:
                 instance.endereco = Endereco.objects.create(**endereco_data)
-        
-        # 3. Atualiza Funcionário
+
+        # 3. Atualiza Filial (se fornecida e for um UUID válido)
+        if filial_id:
+            try:
+                # Converte para UUID e busca a filial
+                from uuid import UUID
+                filial_uuid = UUID(str(filial_id))
+                filial = Filial.objects.get(id=filial_uuid, ativo=True)
+                instance.filial = filial
+            except (ValueError, Filial.DoesNotExist):
+                # Se o valor não for UUID ou não existir, ignora (pode logar um aviso)
+                pass
+
+        # 4. Atualiza campos restantes do Funcionário
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        
+
         return instance
 
 

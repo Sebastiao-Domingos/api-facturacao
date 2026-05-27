@@ -21,7 +21,6 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         self.user.save(update_fields=['last_login_token_jti'])
         
         # Debug no console do Django
-        print(f"NOVO LOGIN: {self.user.username} - GRAVADO JTI: {jti}")
 
         return data
 

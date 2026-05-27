@@ -16,9 +16,9 @@ from .serializers import (
     FuncionarioResumidoSerializer, FilialDetailSerializer, FilialResumoSerializer,StockProdutoSerializer
 )
 from rest_framework.exceptions import PermissionDenied
-# apps/empresa/serializers/filial_serializer.py
+from django.db.models import  F  # ← Adicionar F aqui
 
-from django.db.models import Count, Sum, F  # ← Adicionar F aqui
+from core.permissions import IsAdminOrSuperAdmin
 
 # Resto do código...
 
@@ -56,16 +56,7 @@ class EmpresaViewSet(viewsets.ModelViewSet):
     pagination_class = None
     
 
-class FilialViewSet(viewsets.ModelViewSet):
-    """
-    CRUD para Filiais
-    - GET /filiais/ - Listagem resumida
-    - GET /filiais/{id}/ - Detalhe completo (com funcionários e stocks opcionais)
-    - GET /filiais/{id}/resumo/ - Resumo com métricas
-    - GET /filiais/{id}/funcionarios/ - Lista de funcionários
-    - GET /filiais/{id}/stocks/ - Lista de stocks
-    """
-    
+class FilialViewSet(viewsets.ModelViewSet):    
     permission_classes = [IsAuthenticated]
     pagination_class = None
     
@@ -114,12 +105,7 @@ class FilialViewSet(viewsets.ModelViewSet):
         return FilialSerializer
     
     def retrieve(self, request, *args, **kwargs):
-        """
-        GET /filiais/{id}/
-        Suporta query params:
-        - ?include_funcionarios=true  (inclui lista de funcionários)
-        - ?include_stocks=true        (inclui lista de stocks)
-        """
+
         instance = self.get_object()
         serializer = self.get_serializer(instance, context={'request': request})
         return Response(serializer.data)
@@ -238,63 +224,51 @@ class FilialViewSet(viewsets.ModelViewSet):
 
 
 class FuncionarioViewSet(viewsets.ModelViewSet):
-    """
-    CRUD completo para Funcionários
-    """
-    queryset = Funcionario.objects.select_related(
-        'user', 'filial', 'endereco', 'filial__empresa'
-    ).all()
-    
     permission_classes = [IsAuthenticated]
     pagination_class = PadraoPaginacao
-    
-    # Filtros corretos (apenas campos do banco)
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['filial', 'papel', 'ativo', 'filial__empresa']
     search_fields = ['user__first_name', 'user__last_name', 'bi', 'user__email', 'telemovel']
     ordering_fields = ['created_at', 'user__first_name', 'papel', 'ativo']
-    ordering = ['-created_at']  # Ordem padrão
+    ordering = ['-created_at']
 
-    def get_serializer_class(self):
-        """Usa o mesmo serializer para todas as ações"""
-        return FuncionarioSerializer  # ← Remove o FuncionarioDetailSerializer
-    
-    # Opcional: mantém o list serializer para performance
+    def get_queryset(self):
+        user = self.request.user
+        qs = Funcionario.objects.select_related(
+            'user', 'filial', 'endereco', 'filial__empresa'
+        )
+
+        if user.is_superuser:
+            return qs.all()
+
+        if not hasattr(user, 'funcionario'):
+            return qs.none()
+
+        funcionario = user.funcionario
+
+        # ADMIN da empresa vê todos os funcionários da sua empresa
+        if funcionario.papel == 'ADMIN':
+            return qs.filter(filial__empresa=funcionario.filial.empresa)
+
+        # GESTOR vê apenas funcionários da sua filial
+        if funcionario.papel == 'GESTOR':
+            return qs.filter(filial=funcionario.filial)
+
+        # OPERADOR e CONTABILISTA vêem apenas o próprio registo
+        return qs.filter(id=funcionario.id)
+
     def get_serializer_class(self):
         if self.action == 'list':
             return FuncionarioListSerializer
-        return FuncionarioSerializer  # ← Para retrieve, create, update
-
-    def get_queryset(self):
-        """Aplica regras de permissão baseadas no papel do usuário"""
-        user = self.request.user
-        
-        # SUPERADMIN vê tudo
-        if user.is_superuser:
-            return self.queryset
-        
-        # Usuário sem perfil de funcionário
-        if not hasattr(user, 'funcionario'):
-            return self.queryset.none()
-        
-        funcionario = user.funcionario
-        
-        # ADMIN da empresa vê todos da mesma empresa
-        if funcionario.papel == 'ADMIN':
-            return self.queryset.filter(filial__empresa=funcionario.filial.empresa)
-        
-        # GESTOR vê apenas funcionários da sua filial
-        if funcionario.papel == 'GESTOR':
-            return self.queryset.filter(filial=funcionario.filial)
-        
-        # OPERADOR e CONTABILISTA vêem apenas o próprio
-        return self.queryset.filter(id=funcionario.id)
+        if self.action == 'retrieve':
+            return FuncionarioDetailSerializer
+        return FuncionarioSerializer
 
     @action(detail=False, methods=['get'], url_path='me')
     def me(self, request):
         """Retorna o perfil do funcionário logado"""
         try:
-            funcionario = self.queryset.get(user=request.user)
+            funcionario = self.get_queryset().get(user=request.user)
             serializer = FuncionarioDetailSerializer(funcionario)
             return Response(serializer.data)
         except Funcionario.DoesNotExist:
@@ -303,49 +277,25 @@ class FuncionarioViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=True, methods=['post'], url_path='ativar')
+    @action(detail=True, methods=['post'], url_path='ativar', permission_classes=[IsAdminOrSuperAdmin])
     def ativar(self, request, pk=None):
-        """Reativa um funcionário"""
         funcionario = self.get_object()
         funcionario.ativo = True
-        
-        # Reativa o User também
         if funcionario.user:
             funcionario.user.is_active = True
             funcionario.user.save()
-        
         funcionario.save()
         return Response({"message": "Funcionário activado com sucesso."})
 
-    @action(detail=True, methods=['post'], url_path='desativar')
+    @action(detail=True, methods=['post'], url_path='desativar', permission_classes=[IsAdminOrSuperAdmin])
     def desativar(self, request, pk=None):
-        """Desativa um funcionário (soft delete)"""
         funcionario = self.get_object()
         funcionario.ativo = False
-        
-        # Desativa o User também
         if funcionario.user:
             funcionario.user.is_active = False
             funcionario.user.save()
-        
         funcionario.save()
         return Response({"message": "Funcionário desactivado com sucesso."})
-
-    def get_queryset(self):
-        user = self.request.user
-        
-        # Base do QuerySet com otimização de banco de dados
-        qs = Funcionario.objects.select_related('user', 'filial', 'endereco', 'filial__empresa')
-
-        if user.is_superuser:
-            return qs.all()
-        
-        if not hasattr(user, 'funcionario'):
-            return qs.none()
-
-        # Regra de Ouro: Ver apenas colegas da mesma EMPRESA
-        return qs.filter(filial__empresa=user.funcionario.filial.empresa)
-
 
 class PerfilUtilizadorView(APIView):
     """
