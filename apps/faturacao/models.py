@@ -383,3 +383,64 @@ class Pagamento(BaseModel):
         total_pago = self.documento.pagamentos.aggregate(Sum('valor'))['valor__sum'] or 0
         self.documento.total_pago = total_pago
         self.documento.atualizar_estado()
+
+
+
+
+
+
+# apps/faturacao/models.py
+
+class Fornecedor(BaseModel):
+    """Fornecedor de produtos"""
+    nome = models.CharField(max_length=200)
+    nif = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    telefone = models.CharField(max_length=20, blank=True, null=True)
+    endereco = models.TextField(blank=True, null=True)
+    observacao = models.TextField(blank=True, null=True)
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Fornecedor"
+        verbose_name_plural = "Fornecedores"
+
+    def __str__(self):
+        return self.nome
+
+
+class Compra(BaseModel):
+    """Pedido de compra a fornecedor"""
+    ESTADO_CHOICES = [
+        ('RASCUNHO', 'Rascunho'),
+        ('CONFIRMADA', 'Confirmada'),
+        ('CANCELADA', 'Cancelada'),
+    ]
+
+    fornecedor = models.ForeignKey(Fornecedor, on_delete=models.PROTECT, related_name='compras')
+    filial = models.ForeignKey('organizacao.Filial', on_delete=models.PROTECT, related_name='compras')
+    data_compra = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='RASCUNHO')
+    total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    observacao = models.TextField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Compra"
+        verbose_name_plural = "Compras"
+        ordering = ['-data_compra']
+
+    def __str__(self):
+        return f"Compra #{self.id} - {self.fornecedor.nome}"
+
+
+class LinhaCompra(BaseModel):
+    """Linha de compra (produto, quantidade, preço)"""
+    compra = models.ForeignKey(Compra, on_delete=models.CASCADE, related_name='linhas')
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name='compras')
+    quantidade = models.DecimalField(max_digits=12, decimal_places=3)
+    preco_unitario = models.DecimalField(max_digits=12, decimal_places=2)
+    total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+
+    def save(self, *args, **kwargs):
+        self.total = self.quantidade * self.preco_unitario
+        super().save(*args, **kwargs)

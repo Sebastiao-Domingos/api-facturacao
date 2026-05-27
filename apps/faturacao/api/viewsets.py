@@ -15,13 +15,13 @@ from .serializers import (
     DocumentoListSerializer, DocumentoDetailSerializer,
     DocumentoCreateSerializer, PagamentoCreateSerializer, PagamentoSerializer
 )
-from ..services import DocumentoService
+from ..services import DocumentoService , CompraService
 from .pagination import PadraoPaginacao
 
 
-from ..models import Produto, Categoria, Stock, TaxaIva, UnidadeMedida,MovimentacaoStock
+from ..models import Produto, Categoria, Stock, TaxaIva, UnidadeMedida,MovimentacaoStock, Compra, Fornecedor
 from .serializers import (
-    ProdutoSerializer, CategoriaSerializer, StockSerializer, 
+    ProdutoSerializer, CategoriaSerializer, StockSerializer, FornecedorSerializer,CompraSerializer,CompraCreateSerializer,
     TaxaIvaSerializer, UnidadeMedidaSerializer, MovimentacaoStockSerializer,ExecutarMovimentacaoSerializer
 )
 
@@ -260,3 +260,53 @@ class PagamentoViewSet(viewsets.ReadOnlyModelViewSet):
         
         return Pagamento.objects.none()
 
+
+
+
+
+# apps/faturacao/viewsets.py
+
+class FornecedorViewSet(viewsets.ModelViewSet):
+    queryset = Fornecedor.objects.all()
+    serializer_class = FornecedorSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['ativo']
+    search_fields = ['nome', 'nif']
+    pagination_class = PadraoPaginacao
+
+
+class CompraViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    pagination_class = PadraoPaginacao
+    filterset_fields = ['estado', 'fornecedor', 'filial']
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            return Compra.objects.select_related('fornecedor', 'filial').all()
+        if hasattr(user, 'funcionario'):
+            return Compra.objects.select_related('fornecedor', 'filial').filter(filial=user.funcionario.filial)
+        return Compra.objects.none()
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return CompraCreateSerializer
+        if self.action == 'list' or self.action == 'retrieve':
+            return CompraSerializer
+        return CompraSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        compra = serializer.save()
+        output = CompraSerializer(compra)
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='confirmar')
+    def confirmar(self, request, pk=None):
+        try:
+            compra = CompraService.confirmar_compra(pk, request.user)
+            serializer = CompraSerializer(compra)
+            return Response(serializer.data)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

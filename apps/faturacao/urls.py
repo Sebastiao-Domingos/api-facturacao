@@ -14,6 +14,8 @@ router.register(r'unidades-medida', viewsets.UnidadeMedidaViewSet , basename='un
 router.register(r'movimentacoes', viewsets.MovimentacaoStockViewSet , basename='movimentacoes')
 router.register(r'documentos', viewsets.DocumentoViewSet, basename='documento')
 router.register(r'pagamentos', viewsets.PagamentoViewSet, basename='pagamento')
+router.register(r'fornecedores', viewsets.FornecedorViewSet , basename='fornecedores')
+router.register(r'compras', viewsets.CompraViewSet , basename='compras')
 # No teu ficheiro de URLs onde tens os outros routers adiciona:
 
 # Registo no teu router global existente

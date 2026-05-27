@@ -1,7 +1,8 @@
 # apps/faturacao/services.py
 from django.db import transaction
 from django.utils import timezone
-from .models import Documento, Stock, MovimentacaoStock
+from .models import Documento, Stock, MovimentacaoStock, Compra
+
 
 class DocumentoService:
     """Serviços para gestão de documentos fiscais"""
@@ -96,3 +97,34 @@ class DocumentoService:
                 origem_destino=f"Anulação de documento {documento.numero}",
                 operador=operador
             )
+
+
+
+
+class CompraService:
+
+    @staticmethod
+    @transaction.atomic
+    def confirmar_compra(compra_id, user):
+        compra = Compra.objects.select_for_update().get(id=compra_id)
+        if compra.estado != 'RASCUNHO':
+            raise ValueError(f"Compra não pode ser confirmada. Estado atual: {compra.estado}")
+
+        for linha in compra.linhas.all():
+            stock, created = Stock.objects.get_or_create(
+                produto=linha.produto,
+                filial=compra.filial,
+                defaults={'quantidade': 0, 'stock_minimo': 5}
+            )
+            stock.quantidade += linha.quantidade
+            stock.save()
+            MovimentacaoStock.objects.create(
+                stock_filial=stock,
+                tipo='E',
+                quantidade=linha.quantidade,
+                origem_destino=f"Compra {compra.id} - Fornecedor {compra.fornecedor.nome}",
+                operador=user
+            )
+        compra.estado = 'CONFIRMADA'
+        compra.save()
+        return compra

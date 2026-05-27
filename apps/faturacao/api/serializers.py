@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ..models import Categoria, UnidadeMedida, TaxaIva, Produto, Stock, MovimentacaoStock, SerieDocumento, LinhaDocumento , Pagamento,Documento
+from ..models import Categoria, UnidadeMedida, TaxaIva, Produto, Stock, MovimentacaoStock, SerieDocumento, LinhaDocumento , Pagamento,Documento, Fornecedor, LinhaCompra, Compra
 from django.db import transaction, models
 from rest_framework.exceptions import ValidationError
 # apps/faturacao/serializers.py
@@ -431,3 +431,105 @@ class PagamentoSerializer(serializers.ModelSerializer):
             'valor', 'metodo', 'metodo_display', 'referencia',
             'data_pagamento', 'operador', 'operador_nome', "filial_nome", "cliente_nif", "cliente_id", "filial_id"
         ]
+
+
+
+
+
+
+
+
+
+# apps/faturacao/serializers.py
+
+class FornecedorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Fornecedor
+        fields = ['id', 'nome', 'nif', 'email', 'telefone', 'endereco', 'observacao', 'ativo', 'created_at', 'updated_at']
+
+
+class LinhaCompraSerializer(serializers.ModelSerializer):
+    produto_nome = serializers.ReadOnlyField(source='produto.nome')
+    produto_codigo = serializers.ReadOnlyField(source='produto.codigo_barras')
+
+    class Meta:
+        model = LinhaCompra
+        fields = ['id', 'produto', 'produto_nome', 'produto_codigo', 'quantidade', 'preco_unitario', 'total']
+
+
+class CompraSerializer(serializers.ModelSerializer):
+    fornecedor_nome = serializers.ReadOnlyField(source='fornecedor.nome')
+    filial_nome = serializers.ReadOnlyField(source='filial.nome')
+    linhas = LinhaCompraSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Compra
+        fields = ['id', 'fornecedor', 'fornecedor_nome', 'filial', 'filial_nome',
+                  'data_compra', 'estado', 'total', 'observacao', 'linhas']
+
+
+class CompraCreateSerializer(serializers.Serializer):
+    fornecedor_id = serializers.UUIDField()
+    filial_id = serializers.UUIDField()
+    observacao = serializers.CharField(required=False, allow_blank=True)
+    linhas = serializers.ListField(child=serializers.DictField(), min_length=1)
+
+    def validate_fornecedor_id(self, value):
+        try:
+            return Fornecedor.objects.get(id=value, ativo=True)
+        except Fornecedor.DoesNotExist:
+            raise serializers.ValidationError("Fornecedor não encontrado ou inativo")
+
+    def validate_filial_id(self, value):
+        try:
+            return Filial.objects.get(id=value, ativo=True)
+        except Filial.DoesNotExist:
+            raise serializers.ValidationError("Filial não encontrada ou inativa")
+
+    def validate_linhas(self, value):
+        for idx, linha in enumerate(value):
+            if 'produto_id' not in linha:
+                raise serializers.ValidationError(f"Produto não informado na linha {idx+1}")
+            try:
+                produto = Produto.objects.get(id=linha['produto_id'], ativo=True)
+                linha['produto_obj'] = produto
+            except Produto.DoesNotExist:
+                raise serializers.ValidationError(f"Produto não encontrado na linha {idx+1}")
+            if linha.get('quantidade', 0) <= 0:
+                raise serializers.ValidationError(f"Quantidade inválida na linha {idx+1}")
+            if linha.get('preco_unitario', 0) <= 0:
+                raise serializers.ValidationError(f"Preço inválido na linha {idx+1}")
+        return value
+
+    @transaction.atomic
+    def create(self, validated_data):
+        fornecedor = validated_data['fornecedor_id']
+        filial = validated_data['filial_id']
+        linhas_data = validated_data['linhas']
+        compra = Compra.objects.create(
+            fornecedor=fornecedor,
+            filial=filial,
+            observacao=validated_data.get('observacao', '')
+        )
+        total = 0
+        for linha_data in linhas_data:
+            produto = linha_data['produto_obj']
+            quantidade = linha_data['quantidade']
+            preco_unitario = linha_data['preco_unitario']
+            total_linha = quantidade * preco_unitario
+            LinhaCompra.objects.create(
+                compra=compra,
+                produto=produto,
+                quantidade=quantidade,
+                preco_unitario=preco_unitario,
+                total=total_linha
+            )
+            total += total_linha
+        compra.total = total
+        compra.save()
+        return compra
+
+
+class CompraConfirmSerializer(serializers.Serializer):
+    """Serializer para confirmar a compra (atualiza stock)"""
+    pass  # sem campos adicionais
