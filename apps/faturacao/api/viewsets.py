@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import IsAuthenticated 
-from core.permissions import IsAdminOrGestor, IsAdminOrSuperAdmin
+from core.permissions import IsAdminOrGestor, IsAdminOrSuperAdmin,IsAdminOrGestorOrOperador
 from .pagination import PadraoPaginacao
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -204,18 +204,17 @@ class DocumentoViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        
-        # SUPERADMIN vê tudo
         if user.is_superuser:
-            return Documento.objects.select_related('cliente', 'filial').all()
-        
-        # Funcionário vê apenas documentos da sua filial
-        if hasattr(user, 'funcionario'):
-            return Documento.objects.select_related('cliente', 'filial').filter(
-                filial=user.funcionario.filial
-            )
-        
-        return Documento.objects.none()
+            return Documento.objects.all()
+        if not hasattr(user, 'funcionario'):
+            return Documento.objects.none()
+        funcionario = user.funcionario
+        if funcionario.papel == 'ADMIN':
+            return Documento.objects.filter(filial__empresa=funcionario.filial.empresa)
+        if funcionario.papel == 'GESTOR':
+            return Documento.objects.filter(filial=funcionario.filial)
+        # OPERADOR e CONTABILISTA vêem apenas documentos que criaram (ou da sua filial)
+        return Documento.objects.filter(filial=funcionario.filial)
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -227,6 +226,16 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         if self.action == 'registrar_pagamento':
             return PagamentoCreateSerializer
         return DocumentoDetailSerializer
+    
+    def get_permissions(self):
+        if self.action == 'create':
+            return [IsAuthenticated(), IsAdminOrGestorOrOperador()]
+        if self.action == 'anular':
+            return [IsAuthenticated(), IsAdminOrGestor()]
+    
+        if self.action == 'registrar_pagamento':
+            return [IsAuthenticated(), IsAdminOrGestorOrOperador()]
+        return [IsAuthenticated()]
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -250,7 +259,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
-    @action(detail=True, methods=['post'], url_path='anular')
+    @action(detail=True, methods=['post'], url_path='anular' )
     def anular(self, request, pk=None):
         """Anula um documento (restaura stock)"""
         try:
@@ -315,16 +324,17 @@ class PagamentoViewSet(viewsets.ReadOnlyModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        
         if user.is_superuser:
-            return Pagamento.objects.select_related('documento', 'operador').all()
-        
-        if hasattr(user, 'funcionario'):
-            return Pagamento.objects.select_related('documento', 'operador').filter(
-                documento__filial=user.funcionario.filial
-            )
-        
-        return Pagamento.objects.none()
+            return Pagamento.objects.all()
+        if not hasattr(user, 'funcionario'):
+            return Pagamento.objects.none()
+        funcionario = user.funcionario
+        if funcionario.papel == 'ADMIN':
+            # Pagamentos de documentos de qualquer filial da sua empresa
+            empresa = funcionario.filial.empresa
+            return Pagamento.objects.filter(documento__filial__empresa=empresa)
+        # GESTOR, OPERADOR, CONTABILISTA: apenas pagamentos da sua filial
+        return Pagamento.objects.filter(documento__filial=funcionario.filial)
 
 
 

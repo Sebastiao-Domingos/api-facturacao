@@ -67,9 +67,7 @@ class IsAdminOrSameFilial(BasePermission):
 
 # apps/organizacao/permissions.py
 class IsAdminOrGestor(BasePermission):
-    """
-    Permissão para SUPERADMIN, ADMIN ou GESTOR.
-    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
@@ -80,5 +78,20 @@ class IsAdminOrGestor(BasePermission):
         if hasattr(request.user, 'funcionario'):
             papel = request.user.funcionario.papel
             return papel in ['SUPERADMIN', 'ADMIN', 'GESTOR']
+
+        return False
+    
+class IsAdminOrGestorOrOperador(BasePermission):
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if request.user.is_superuser:
+            return True
+
+        if hasattr(request.user, 'funcionario'):
+            papel = request.user.funcionario.papel
+            return papel in ['SUPERADMIN', 'ADMIN', 'GESTOR', "OPERADOR"]
 
         return False
