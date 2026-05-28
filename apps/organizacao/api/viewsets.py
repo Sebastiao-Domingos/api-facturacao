@@ -19,6 +19,7 @@ from rest_framework.exceptions import PermissionDenied
 from django.db.models import  F  # ← Adicionar F aqui
 
 from core.permissions import IsAdminOrSuperAdmin
+from apps.faturacao.models import Stock
 
 # Resto do código...
 
@@ -50,10 +51,38 @@ class EnderecoViewSet(LocalizacaoBaseViewSet):
 
 
 class EmpresaViewSet(viewsets.ModelViewSet):
-    queryset = Empresa.objects.all()
     serializer_class = EmpresaSerializer
     permission_class = [permissions.IsAdminUser]
     pagination_class = None
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            return Empresa.objects.all()
+        if hasattr(user, 'funcionario'):
+            # apenas a empresa do funcionário logado
+            return Empresa.objects.filter(id=user.funcionario.filial.empresa.id)
+        return Empresa.objects.none()
+
+    @action(detail=False, methods=['get'], url_path='me')
+    def me(self, request):
+        """Retorna a empresa do utilizador autenticado com estatísticas"""
+        user = request.user
+        if not hasattr(user, 'funcionario'):
+            return Response({"error": "Utilizador não associado a uma empresa."}, status=404)
+        empresa = user.funcionario.filial.empresa
+        
+        # Estatísticas
+        total_funcionarios = Funcionario.objects.filter(filial__empresa=empresa, ativo=True).count()
+        total_filiais = Filial.objects.filter(empresa=empresa, ativo=True).count()
+        total_produtos_stock = Stock.objects.filter(filial__empresa=empresa).values('produto').distinct().count()
+        
+        serializer = self.get_serializer(empresa)
+        data = serializer.data
+        data['total_funcionarios'] = total_funcionarios
+        data['total_filiais'] = total_filiais
+        data['total_produtos_stock'] = total_produtos_stock
+        return Response(data)
     
 
 class FilialViewSet(viewsets.ModelViewSet):    

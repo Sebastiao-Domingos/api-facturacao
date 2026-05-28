@@ -5,7 +5,7 @@ import re
 from rest_framework.exceptions import ValidationError,PermissionDenied
 from django.db import transaction
 from rest_framework import serializers
-from django.db.models import Count, Sum, F
+from django.db.models import  Sum, F
 from apps.faturacao.models import  Stock
 
 
