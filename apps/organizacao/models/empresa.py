@@ -20,15 +20,21 @@ class Empresa(BaseModel):
 
     def __str__(self): return f"{self.nome_fantasia} ({self.nif})"
 
+# apps/empresa/models/filial.py
+
 class Filial(BaseModel):
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='filiais')
     nome = models.CharField(max_length=100)
     codigo_agt = models.CharField(max_length=50)
     e_sede = models.BooleanField(default=False)
-    serie_documentos = models.CharField(max_length=10, default='A', help_text="Série de faturação (ex: A, B, 2026A)")  # Ex: Se a série for 'A', as faturas serão A/001, A/002...
+    serie_documentos = models.CharField(max_length=10, default='A')
     endereco = models.OneToOneField(Endereco, on_delete=models.SET_NULL, null=True, related_name='filial')
-
-    def __str__(self): return f"{self.nome} ({self.empresa.nome_fantasia})"
+    
+    # NOVO CAMPO
+    ativo = models.BooleanField(default=True, help_text="Indica se a filial está ativa")
+    
+    def __str__(self): 
+        return f"{self.nome} ({self.empresa.nome_fantasia})"
 
     class Meta:
         unique_together = ('empresa', 'codigo_agt')
