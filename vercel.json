@@ -1,0 +1,19 @@
+{
+  "builds": [
+    {
+      "src": "core/wsgi.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "core/wsgi.py"
+    }
+  ],
+  "env": {
+    "DJANGO_SECRET_KEY": "@django_secret_key",
+    "DEBUG": "False",
+    "DATABASE_URL": "@database_url"
+  }
+}
