@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/v1/organizacao/', include('apps.organizacao.urls')),
 
     path('api/v1/faturacao/', include('apps.faturacao.urls')),
+    path('api/v1/dashboard/', include('apps.dashboard.urls')),
 ]
 
 # ESTA PARTE É O QUE FALTA: 

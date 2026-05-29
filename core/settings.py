@@ -2,6 +2,7 @@
 from datetime import timedelta
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,12 +32,15 @@ DJANGO_APPS = [
     "rest_framework",
     'rest_framework_simplejwt',
     "django_filters",
+    "corsheaders",
 ]
 LOCAL_APPS = [
     'apps.organizacao',
     'apps.utilizadores',
     "apps.faturacao",
     "common",
+    'apps.clientes',
+    "apps.dashboard",
     # Aqui você pode adicionar apps locais específicos do seu projeto
 ]
 
@@ -52,8 +56,10 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # 'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.utilizadores.authentication.SingleTokenAuthentication', # A tua nova classe
         'rest_framework.authentication.SessionAuthentication', # ADICIONA ESTA LINHA
+
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -69,29 +75,45 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+    'JTI_CLAIM': 'jti', # Certifica-te que esta linha existe ou é o padrão
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id', # Como usamos UUID
     'USER_ID_CLAIM': 'user_id',
+    'TOKEN_OBTAIN_SERIALIZER': 'apps.utilizadores.serializers.MyTokenObtainPairSerializer',
 }
 
 
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', # Deve estar no TOPO da lista
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://192.168.43.5:3000", # Teu IP de rede que vimos no log anterior
+]
+
+# Se quiseres permitir tudo apenas durante o desenvolvimento (não recomendado em produção)
+# CORS_ALLOW_ALL_ORIGINS = True 
+
+# Importante para o que definimos nos Cookies
+CORS_ALLOW_CREDENTIALS = True
+
 ROOT_URLCONF = 'core.urls'
 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'apps/faturacao/templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -163,3 +185,9 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # No final do settings.py
 AUTH_USER_MODEL = 'utilizadores.CustomUser'
+
+AUTHENTICATION_BACKENDS = [
+    'apps.utilizadores.backends.EmailOrUsernameModelBackend', # Ex: 'apps.utilizadores.backends...'
+    'django.contrib.auth.backends.ModelBackend', # Mantém o padrão como reserva
+]
+
