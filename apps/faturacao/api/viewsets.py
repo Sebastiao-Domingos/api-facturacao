@@ -287,10 +287,57 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         output_serializer = PagamentoSerializer(pagamento)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
     
+    # @action(detail=True, methods=['get'], url_path='pdf')
+    # def download_pdf(self, request, pk=None):
+    #     """Gera e baixa o PDF do documento"""
+    #     documento = self.get_object()
+    #     empresa = documento.filial.empresa
+
+    #     print("="*80)
+    #     print(f"📄 Gerando PDF: {documento.numero}")
+    #     print(f"🏢 Empresa: {empresa.nome_fantasia}")
+    #     print(f"🖼️ Logotipo: {empresa.logotipo}")  # Verifique o nome do campo aqui
+    #     print(f"📁 URL do logo: {empresa.logotipo.url if empresa.logotipo else 'Sem logo'}")
+    #     print(f"👤 Utilizador: {request.user}")
+    #     print("="*80)# Debug: Verificar se o documento é recuperado corretamente
+    #     # Prepara o contexto para o template
+    #     context = {
+    #         'documento': documento,
+    #         'linhas': documento.linhas.all(),
+    #         'cliente': documento.cliente,
+    #         'filial': documento.filial,
+    #         'empresa':empresa,
+    #         'data_emissao': documento.data_emissao,
+    #         'user': request.user,
+    #     }
+        
+    #     # Renderiza o HTML
+    #     html_string = render_to_string('faturacao/documento_pdf.html', context)
+        
+    #     # Gera o PDF
+    #     pdf_file = HTML(string=html_string).write_pdf()
+        
+    #     # Retorna o PDF
+    #     response = HttpResponse(pdf_file, content_type='application/pdf')
+    #     response['Content-Disposition'] = f'inline; filename="{documento.numero}.pdf"'
+    #     return response
+
+
+
     @action(detail=True, methods=['get'], url_path='pdf')
     def download_pdf(self, request, pk=None):
         """Gera e baixa o PDF do documento"""
+        import os
+        from django.conf import settings
+        
         documento = self.get_object()
+        empresa = documento.filial.empresa
+        
+        # Construir o caminho absoluto do logotipo
+        logo_absoluto = None
+        if empresa.logotipo:
+            logo_absoluto = os.path.join(settings.MEDIA_ROOT, str(empresa.logotipo))
+        
         
         # Prepara o contexto para o template
         context = {
@@ -298,8 +345,12 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             'linhas': documento.linhas.all(),
             'cliente': documento.cliente,
             'filial': documento.filial,
-            'empresa': documento.filial.empresa,
+            'empresa': empresa,
             'data_emissao': documento.data_emissao,
+            'user': request.user,
+            'logo_absoluto': logo_absoluto,  # ← CAMINHO ABSOLUTO para WeasyPrint
+            "slogan": empresa.slogan,
+            'media_root': settings.MEDIA_ROOT,  # ← Raiz do media
         }
         
         # Renderiza o HTML

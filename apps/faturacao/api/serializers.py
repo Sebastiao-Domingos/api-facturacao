@@ -5,6 +5,7 @@ from rest_framework.exceptions import ValidationError
 # apps/faturacao/serializers.py
 from django.utils import timezone
 from apps.organizacao.models import  Filial
+from apps.organizacao.api.serializers import FilialSerializer
 from apps.clientes.models import  Cliente
 
 class CategoriaSerializer(serializers.ModelSerializer):
@@ -217,7 +218,7 @@ class DocumentoDetailSerializer(serializers.ModelSerializer):
     pagamentos = PagamentoSerializer(many=True, read_only=True)
     
     cliente = serializers.SerializerMethodField()
-    filial = serializers.SerializerMethodField()
+    filial = FilialSerializer(read_only=True)
     
     class Meta:
         model = Documento
