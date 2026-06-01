@@ -11,6 +11,7 @@ class Empresa(BaseModel):
     ]
 
     nome_fantasia = models.CharField(max_length=200)
+    slogan = models.CharField(max_length=255, null=True, blank=True)
     nif = models.CharField(max_length=20, unique=True)
     regime_tributario = models.CharField(max_length=20, choices=REGIME_CHOICES, default='GERAL')
     moeda_padrao = models.CharField(max_length=3, default='AOA')
