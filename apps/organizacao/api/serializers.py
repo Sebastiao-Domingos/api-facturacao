@@ -45,7 +45,7 @@ class EmpresaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Empresa
         fields = [
-            'id', 'nome_fantasia', 'razao_social', 'nif', 
+            'id', 'nome_fantasia', 'razao_social', 'nif', "slogan",
             'logotipo', 'endereco_data', 'endereco', "moeda_padrao", "regime_tributario",
             'created_at', 'updated_at'
         ]
@@ -106,6 +106,7 @@ class FilialSerializer(serializers.ModelSerializer):
     # Campo para receber o contexto do request (será preenchido na view)
     empresa_id = serializers.UUIDField(write_only=True, required=False)
 
+    empresa_detalhes = EmpresaSerializer(source='empresa', read_only=True)
     class Meta:
         model = Filial
         fields = '__all__'
@@ -296,6 +297,7 @@ class FilialResumoSerializer(serializers.ModelSerializer):
     Serializer resumido para listagem de filiais (sem detalhes pesados)
     """
     empresa_nome = serializers.ReadOnlyField(source='empresa.nome_fantasia')
+
     total_funcionarios = serializers.SerializerMethodField()
     
     class Meta:
