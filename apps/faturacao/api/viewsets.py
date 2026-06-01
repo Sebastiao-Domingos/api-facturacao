@@ -332,22 +332,12 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         
         documento = self.get_object()
         empresa = documento.filial.empresa
-
-        # Debug
-        print("="*80)
-        print(f"📄 Gerando PDF: {documento.numero}")
-        print(f"🏢 Empresa: {empresa.nome_fantasia}")
-        print(f"🖼️ Logotipo: {empresa.logotipo}")
         
         # Construir o caminho absoluto do logotipo
         logo_absoluto = None
         if empresa.logotipo:
             logo_absoluto = os.path.join(settings.MEDIA_ROOT, str(empresa.logotipo))
-            print(f"📁 Caminho absoluto: {logo_absoluto}")
-            print(f"✅ Ficheiro existe: {os.path.exists(logo_absoluto)}")
         
-        print(f"👤 Utilizador: {request.user}")
-        print("="*80)
         
         # Prepara o contexto para o template
         context = {
@@ -359,6 +349,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             'data_emissao': documento.data_emissao,
             'user': request.user,
             'logo_absoluto': logo_absoluto,  # ← CAMINHO ABSOLUTO para WeasyPrint
+            "slogan": empresa.slogan,
             'media_root': settings.MEDIA_ROOT,  # ← Raiz do media
         }
         

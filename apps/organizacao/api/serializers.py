@@ -45,7 +45,7 @@ class EmpresaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Empresa
         fields = [
-            'id', 'nome_fantasia', 'razao_social', 'nif', 
+            'id', 'nome_fantasia', 'razao_social', 'nif', "slogan",
             'logotipo', 'endereco_data', 'endereco', "moeda_padrao", "regime_tributario",
             'created_at', 'updated_at'
         ]
