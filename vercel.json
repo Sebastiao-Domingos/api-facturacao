@@ -1,4 +1,5 @@
 {
+  "buildCommand": "bash build.sh",
   "builds": [
     {
       "src": "core/wsgi.py",
