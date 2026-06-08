@@ -6,6 +6,7 @@ from apps.organizacao.api.auth import MyTokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
+    # Rotas de Admin
     path('admin/', admin.site.urls),
     
     # Interface do DRF para navegar na API pelo browser (útil para testes)
