@@ -323,24 +323,27 @@ class DocumentoViewSet(viewsets.ModelViewSet):
     #     return response
 
 
-
-    @action(detail=True, methods=['get'], url_path='pdf')
-    def download_pdf(self, request, pk=None):
-        """Gera e baixa o PDF do documento"""
-        import os
-        from django.conf import settings
-        
-        documento = self.get_object()
-        empresa = documento.filial.empresa
-        
-        # Construir o caminho absoluto do logotipo
-        logo_absoluto = None
-        if empresa.logotipo:
-            logo_absoluto = os.path.join(settings.MEDIA_ROOT, str(empresa.logotipo))
-        
-        
-        # Prepara o contexto para o template
-        context = {
+@action(detail=True, methods=['get'], url_path='pdf')
+def download_pdf(self, request, pk=None):
+    """Gera e baixa o PDF do documento"""
+    import os
+    from django.conf import settings
+    from django.http import JsonResponse
+    
+    documento = self.get_object()
+    empresa = documento.filial.empresa
+    
+    # Tentar importar WeasyPrint
+    try:
+        from weasyprint import HTML
+        WEASYPRINT_AVAILABLE = True
+    except (OSError, ImportError):
+        WEASYPRINT_AVAILABLE = False
+    
+    # Se WeasyPrint não estiver disponível (Vercel), retornar erro informativo
+    if not WEASYPRINT_AVAILABLE:
+        # Alternativa: Retornar o HTML diretamente no browser
+        html_string = render_to_string('faturacao/documento_pdf.html', {
             'documento': documento,
             'linhas': documento.linhas.all(),
             'cliente': documento.cliente,
@@ -348,21 +351,96 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             'empresa': empresa,
             'data_emissao': documento.data_emissao,
             'user': request.user,
-            'logo_absoluto': logo_absoluto,  # ← CAMINHO ABSOLUTO para WeasyPrint
-            "slogan": empresa.slogan,
-            'media_root': settings.MEDIA_ROOT,  # ← Raiz do media
-        }
+            'logo_absoluto': None,
+            'slogan': getattr(empresa, 'slogan', ''),
+            'media_root': settings.MEDIA_ROOT,
+        })
         
-        # Renderiza o HTML
-        html_string = render_to_string('faturacao/documento_pdf.html', context)
-        
-        # Gera o PDF
+        return HttpResponse(
+            html_string,
+            content_type='text/html; charset=utf-8'
+        )
+    
+    # WeasyPrint disponível — gerar PDF normalmente
+    # Construir o caminho absoluto do logotipo
+    logo_absoluto = None
+    if empresa.logotipo:
+        logo_absoluto = os.path.join(settings.MEDIA_ROOT, str(empresa.logotipo))
+        if not os.path.exists(logo_absoluto):
+            logo_absoluto = None
+    
+    # Prepara o contexto para o template
+    context = {
+        'documento': documento,
+        'linhas': documento.linhas.all(),
+        'cliente': documento.cliente,
+        'filial': documento.filial,
+        'empresa': empresa,
+        'data_emissao': documento.data_emissao,
+        'user': request.user,
+        'logo_absoluto': logo_absoluto,
+        'slogan': getattr(empresa, 'slogan', ''),
+        'media_root': settings.MEDIA_ROOT,
+    }
+    
+    # Renderiza o HTML
+    html_string = render_to_string('faturacao/documento_pdf.html', context)
+    
+    # Gera o PDF
+    try:
         pdf_file = HTML(string=html_string).write_pdf()
+    except Exception as e:
+        # Se falhar a geração do PDF, retornar o HTML
+        return HttpResponse(
+            f"<h3>Erro ao gerar PDF: {str(e)}</h3><hr>{html_string}",
+            content_type='text/html; charset=utf-8'
+        )
+    
+    # Retorna o PDF
+    response = HttpResponse(pdf_file, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{documento.numero}.pdf"'
+    return response
+
+
+    # @action(detail=True, methods=['get'], url_path='pdf')
+    # def download_pdf(self, request, pk=None):
+    #     """Gera e baixa o PDF do documento"""
+    #     import os
+    #     from django.conf import settings
         
-        # Retorna o PDF
-        response = HttpResponse(pdf_file, content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="{documento.numero}.pdf"'
-        return response
+    #     documento = self.get_object()
+    #     empresa = documento.filial.empresa
+        
+    #     # Construir o caminho absoluto do logotipo
+    #     logo_absoluto = None
+    #     if empresa.logotipo:
+    #         logo_absoluto = os.path.join(settings.MEDIA_ROOT, str(empresa.logotipo))
+        
+        
+    #     # Prepara o contexto para o template
+    #     context = {
+    #         'documento': documento,
+    #         'linhas': documento.linhas.all(),
+    #         'cliente': documento.cliente,
+    #         'filial': documento.filial,
+    #         'empresa': empresa,
+    #         'data_emissao': documento.data_emissao,
+    #         'user': request.user,
+    #         'logo_absoluto': logo_absoluto,  # ← CAMINHO ABSOLUTO para WeasyPrint
+    #         "slogan": empresa.slogan,
+    #         'media_root': settings.MEDIA_ROOT,  # ← Raiz do media
+    #     }
+        
+    #     # Renderiza o HTML
+    #     html_string = render_to_string('faturacao/documento_pdf.html', context)
+        
+    #     # Gera o PDF
+    #     pdf_file = HTML(string=html_string).write_pdf()
+        
+    #     # Retorna o PDF
+    #     response = HttpResponse(pdf_file, content_type='application/pdf')
+    #     response['Content-Disposition'] = f'inline; filename="{documento.numero}.pdf"'
+    #     return response
 
 
 class PagamentoViewSet(viewsets.ReadOnlyModelViewSet):
