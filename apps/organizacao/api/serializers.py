@@ -10,10 +10,6 @@ from apps.faturacao.models import  Stock
 
 
 # --- LOCALIZAÇÃO ---
-class ProvinciaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Provincia
-        fields = ['id', 'nome', 'created_at', 'updated_at']
 
 class MunicipioSerializer(serializers.ModelSerializer):
     provincia_nome = serializers.ReadOnlyField(source='provincia.nome')
@@ -21,6 +17,14 @@ class MunicipioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Municipio
         fields = ['id', 'nome', 'provincia', 'provincia_nome', 'created_at', 'updated_at']
+
+class ProvinciaSerializer(serializers.ModelSerializer):
+    municipios = MunicipioSerializer(many=True, read_only=True)
+    class Meta:
+        model = Provincia
+        fields = ['id', 'nome', 'created_at', 'updated_at', 'municipios']
+
+
 
 
 class EnderecoSerializer(serializers.ModelSerializer):
