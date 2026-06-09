@@ -3,6 +3,8 @@ import os
 import dj_database_url
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
+load_dotenv()  # carrega as variáveis do ficheiro .env que estiver na raiz do projeto
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -12,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.vercel.app').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # ============================================================================
 # APLICAÇÕES
@@ -47,7 +49,7 @@ INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',          # ← para servir estáticos
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -85,7 +87,7 @@ DATABASES = {
     'default': dj_database_url.config(
         default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
         conn_max_age=600,
-        ssl_require=os.getenv('DATABASE_URL', '').startswith('postgresql://'),
+        ssl_require=False,
     )
 }
 
@@ -115,7 +117,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ============================================================================
-# FICHEIROS MEDIA (Cloudinary para produção)
+# FICHEIROS MEDIA (Cloudinary opcional)
 # ============================================================================
 DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
 if os.getenv('CLOUDINARY_CLOUD_NAME'):
@@ -178,7 +180,7 @@ SIMPLE_JWT = {
 }
 
 # ============================================================================
-# SEGURANÇA HTTPS (Vercel já trata HTTPS)
+# SEGURANÇA HTTPS (recomendado em produção)
 # ============================================================================
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
@@ -186,14 +188,9 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # ← Vercel
-else:
-    SECURE_SSL_REDIRECT = False
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
 
 # ============================================================================
-# LOGGING
+# LOGGING (opcional)
 # ============================================================================
 LOGGING = {
     'version': 1,
@@ -205,6 +202,6 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO' if not DEBUG else 'DEBUG',
+        'level': 'WARNING',
     },
 }
